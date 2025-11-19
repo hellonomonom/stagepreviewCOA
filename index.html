@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stage Preview COA</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .slider {
+            width: 200px;
+            height: 6px;
+            border-radius: 3px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .slider::-webkit-slider-thumb:hover {
+            background: #00cc6a;
+        }
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .slider::-moz-range-thumb:hover {
+            background: #00cc6a;
+        }
+        .slider-value {
+            display: inline-block;
+            margin-left: 10px;
+            font-size: 14px;
+            color: #00ff88;
+            min-width: 50px;
+        }
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .file-input {
+            display: none;
+        }
+        .file-input-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #00ff88;
+            color: #000;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+            text-align: center;
+            width: 100%;
+        }
+        .file-input-label:hover {
+            background: #00cc6a;
+        }
+        .file-input-label:active {
+            background: #00aa55;
+        }
+        .texture-status {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+        }
+        .texture-status.loaded {
+            color: #00ff88;
+        }
+        .ndi-select {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ff88;
+            border-radius: 6px;
+            color: #00ff88;
+            font-size: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .ndi-select:hover {
+            border-color: #00cc6a;
+            background: rgba(0, 0, 0, 0.6);
+        }
+        .ndi-select:focus {
+            border-color: #00ff88;
+            background: rgba(0, 0, 0, 0.7);
+        }
+        .ndi-select option {
+            background: #1a1a1a;
+            color: #00ff88;
+            padding: 8px;
+        }
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-wrapper input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #00ff88;
+        }
+        .checkbox-wrapper label {
+            cursor: pointer;
+            margin: 0;
+        }
+        .video-overlay {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) scale(1);
+            transform-origin: center bottom;
+            width: 320px;
+            height: 180px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
+        }
+        .video-overlay.active {
+            display: block;
+        }
+        .video-overlay video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .frame-info {
+            color: #00ff88;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+            display: none;
+        }
+        .frame-info.active {
+            display: block;
+        }
+        .timeline-container {
+            width: 100%;
+            display: none;
+        }
+        .timeline-container.active {
+            display: block;
+        }
+        .timeline-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .timeline-slider::-webkit-slider-thumb:hover {
+            background: #00cc6a;
+        }
+        .timeline-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .timeline-slider::-moz-range-thumb:hover {
+            background: #00cc6a;
+        }
+        .playback-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .playback-btn {
+            padding: 8px 16px;
+            background: #00ff88;
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        .playback-btn:hover {
+            background: #00cc6a;
+        }
+        .playback-btn:active {
+            background: #00aa55;
+        }
+        .playback-btn:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+        .debug-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 180px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #ff6b6b;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 200;
+            display: none;
+        }
+        .debug-container.active {
+            display: block;
+        }
+        .debug-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .debug-label {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(255, 107, 107, 0.8);
+            color: #000;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            z-index: 201;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="control-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="showVideoOverlay">
+                <label for="showVideoOverlay">Show Video Overlay</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="overlaySizeSlider">
+                Overlay Size: <span class="slider-value" id="overlaySizeValue">1.0</span>
+            </label>
+            <input 
+                type="range" 
+                id="overlaySizeSlider" 
+                class="slider" 
+                min="0.1" 
+                max="2" 
+                step="0.1" 
+                value="1.0"
+            />
+        </div>
+        <div class="control-group">
+            <label>Source Type</label>
+            <select id="sourceTypeSelect" class="ndi-select">
+                <option value="texture">Load Texture/Video</option>
+                <option value="ndi">Start NDI Stream</option>
+            </select>
+        </div>
+        <div class="control-group" id="textureInputGroup">
+            <label>Texture</label>
+            <div class="file-input-wrapper">
+                <input 
+                    type="file" 
+                    id="textureInput" 
+                    class="file-input" 
+                    accept="image/*,video/mp4"
+                />
+                <label for="textureInput" class="file-input-label">
+                    Load Texture / Video
+                </label>
+            </div>
+            <div class="texture-status" id="textureStatus">No texture loaded</div>
+        </div>
+        <div class="control-group" id="ndiStreamGroup" style="display: none;">
+            <label>Available NDI Streams</label>
+            <button class="file-input-label" id="refreshNdiBtn" style="margin-bottom: 10px;">
+                Refresh NDI Streams
+            </button>
+            <select id="ndiStreamSelect" class="ndi-select">
+                <option value="">No streams discovered yet. Click "Refresh NDI Streams" to discover.</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Playback Controls</label>
+            <div class="playback-controls">
+                <button class="playback-btn" id="jumpToStartBtn">From Start</button>
+                <button class="playback-btn" id="playPauseBtn">Play</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
+            <div class="timeline-container" id="timelineContainer">
+                <input 
+                    type="range" 
+                    id="timelineSlider" 
+                    class="timeline-slider" 
+                    min="0" 
+                    max="100" 
+                    step="0.1" 
+                    value="0"
+                />
+            </div>
+        </div>
+    </div>
+    <div class="video-overlay" id="videoOverlay">
+        <video id="overlayVideo" muted loop playsinline></video>
+    </div>
+    <div class="debug-container" id="debugContainer">
+        <div class="debug-label">NDI Debug (First Stream)</div>
+        <video id="debugVideo" muted playsinline autoplay></video>
+    </div>
+    <script type="module" src="/main.js"></script>
+</body>
+</html>
+
