@@ -39,7 +39,8 @@ const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
 const material = new THREE.ShaderMaterial({
   uniforms: {
     uTexture: { value: null },
-    uHasTexture: { value: 0.0 }
+    uHasTexture: { value: 0.0 },
+    uIsImageTexture: { value: 0.0 }
   },
   vertexShader: `
     varying vec2 vUv;
@@ -56,6 +57,7 @@ const material = new THREE.ShaderMaterial({
   fragmentShader: `
     uniform sampler2D uTexture;
     uniform float uHasTexture;
+    uniform float uIsImageTexture;
     varying vec2 vUv;
     varying vec3 vNormal;
     
@@ -68,7 +70,8 @@ const material = new THREE.ShaderMaterial({
         // Front side shows texture or white
         if (uHasTexture > 0.5) {
           vec4 texColor = texture2D(uTexture, vUv);
-          gl_FragColor = vec4(texColor.rgb, 1.0);
+          // Use texture directly for both images and videos
+          gl_FragColor = vec4(texColor.rgb, texColor.a);
         } else {
           gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         }
@@ -91,8 +94,69 @@ directionalLight.castShadow = true;
 scene.add(directionalLight);
 
 // Texture loading
+const controlPanel = document.getElementById('controlPanel');
 const textureInput = document.getElementById('textureInput');
 const textureStatus = document.getElementById('textureStatus');
+
+// Make control panel draggable
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let panelStartX = 0;
+let panelStartY = 0;
+
+if (controlPanel) {
+  controlPanel.addEventListener('mousedown', (e) => {
+    // Only start dragging if clicking on the panel background or labels (not interactive elements)
+    const target = e.target;
+    const isInteractive = target.tagName === 'INPUT' || 
+                         target.tagName === 'SELECT' || 
+                         target.tagName === 'BUTTON' ||
+                         target.tagName === 'LABEL' && target.getAttribute('for');
+    
+    if (!isInteractive && (target === controlPanel || target.closest('.control-group label'))) {
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      
+      const rect = controlPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      
+      controlPanel.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+      
+      let newX = panelStartX + deltaX;
+      let newY = panelStartY + deltaY;
+      
+      // Keep panel within viewport bounds
+      const panelRect = controlPanel.getBoundingClientRect();
+      const maxX = window.innerWidth - panelRect.width;
+      const maxY = window.innerHeight - panelRect.height;
+      
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+      
+      controlPanel.style.left = `${newX}px`;
+      controlPanel.style.top = `${newY}px`;
+      controlPanel.style.right = 'auto';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      controlPanel.style.cursor = 'grab';
+    }
+  });
+}
 
 // NDI streams list
 const refreshNdiBtn = document.getElementById('refreshNdiBtn');
@@ -390,14 +454,58 @@ function showNDIStreamInWindow(streamName) {
   }
 }
 
-const videoOverlay = document.getElementById('videoOverlay');
+const mapping = document.getElementById('mapping');
 const overlayVideo = document.getElementById('overlayVideo');
+const overlayImage = document.getElementById('overlayImage');
 const frameInfo = document.getElementById('frameInfo');
 const timelineContainer = document.getElementById('timelineContainer');
 const timelineSlider = document.getElementById('timelineSlider');
 let currentVideoElement = null;
 let videoFrameRate = 30; // Default frame rate, will be updated if available
 let isSeeking = false;
+
+// Function to adjust mapping overlay to match aspect ratio
+function adjustMappingAspectRatio(width, height) {
+  const maxWidth = 400; // Maximum width in pixels
+  const maxHeight = 300; // Maximum height in pixels
+  const minWidth = 200; // Minimum width in pixels
+  const minHeight = 100; // Minimum height in pixels
+  
+  // Calculate exact aspect ratio
+  const aspectRatio = width / height;
+  
+  let overlayWidth, overlayHeight;
+  
+  // Calculate optimal size maintaining exact aspect ratio
+  // Try fitting to max width first
+  overlayWidth = maxWidth;
+  overlayHeight = overlayWidth / aspectRatio;
+  
+  // If height exceeds max, fit to max height instead
+  if (overlayHeight > maxHeight) {
+    overlayHeight = maxHeight;
+    overlayWidth = overlayHeight * aspectRatio;
+  }
+  
+  // Ensure minimum size while maintaining aspect ratio
+  if (overlayWidth < minWidth) {
+    overlayWidth = minWidth;
+    overlayHeight = overlayWidth / aspectRatio;
+  }
+  if (overlayHeight < minHeight) {
+    overlayHeight = minHeight;
+    overlayWidth = overlayHeight * aspectRatio;
+  }
+  
+  // Set dimensions with high precision to maintain exact aspect ratio
+  // This prevents black bars on very wide images
+  mapping.style.width = `${overlayWidth}px`;
+  mapping.style.height = `${overlayHeight}px`;
+  
+  // Reset scale to 1 when adjusting aspect ratio
+  const currentScale = parseFloat(overlaySizeSlider.value) || 1.0;
+  mapping.style.transform = `translateX(-50%) scale(${currentScale})`;
+}
 
 // Video overlay size control
 const overlaySizeSlider = document.getElementById('overlaySizeSlider');
@@ -406,7 +514,7 @@ const overlaySizeValue = document.getElementById('overlaySizeValue');
 overlaySizeSlider.addEventListener('input', (e) => {
   const value = parseFloat(e.target.value);
   const scale = value;
-  videoOverlay.style.transform = `translateX(-50%) scale(${scale})`;
+  mapping.style.transform = `translateX(-50%) scale(${scale})`;
   overlaySizeValue.textContent = value.toFixed(1);
 });
 
@@ -457,33 +565,52 @@ timelineSlider.addEventListener('input', () => {
   }
 });
 
-// Checkbox to toggle video overlay visibility
-const showVideoOverlayCheckbox = document.getElementById('showVideoOverlay');
+// Checkbox to toggle mapping visibility
+const showMappingCheckbox = document.getElementById('showMapping');
+const hideFrontScreenCheckbox = document.getElementById('hideFrontScreen');
+const djDeckHeightSlider = document.getElementById('djDeckHeightSlider');
+const djDeckHeightValue = document.getElementById('djDeckHeightValue');
 
-showVideoOverlayCheckbox.addEventListener('change', (e) => {
+// Handle hide front screen checkbox
+hideFrontScreenCheckbox.addEventListener('change', (e) => {
+  displayPlane.visible = !e.target.checked;
+});
+
+// Handle DJ deck height slider
+djDeckHeightSlider.addEventListener('input', (e) => {
+  const value = parseFloat(e.target.value);
+  djDeckHeightValue.textContent = Math.round(value);
+  
+  // TODO: Connect to DJ deck object when available
+  // Example: if (djDeckObject) { djDeckObject.position.y = value; }
+});
+
+showMappingCheckbox.addEventListener('change', (e) => {
   if (e.target.checked) {
-    // Only show if there's a video loaded
-    if (currentVideoElement) {
-      videoOverlay.classList.add('active');
+    // Show if there's a video or texture loaded
+    if (currentVideoElement || material.uniforms.uHasTexture.value === 1.0) {
+      mapping.classList.add('active');
     }
   } else {
-    videoOverlay.classList.remove('active');
+    mapping.classList.remove('active');
   }
 });
 
 // Playback controls
 const playPauseBtn = document.getElementById('playPauseBtn');
-const jumpToStartBtn = document.getElementById('jumpToStartBtn');
+const rewindBtn = document.getElementById('rewindBtn');
+const jumpToEndBtn = document.getElementById('jumpToEndBtn');
+const playbackControlsGroup = document.getElementById('playbackControlsGroup');
 
-// Function to update play/pause button text
+// Function to update play/pause button icon
 function updatePlayPauseButton() {
   if (!currentVideoElement) {
-    playPauseBtn.textContent = 'Play';
+    playPauseBtn.textContent = '▶';
     return;
   }
   
   const isPaused = currentVideoElement.paused;
-  playPauseBtn.textContent = isPaused ? 'Play' : 'Pause';
+  playPauseBtn.textContent = isPaused ? '▶' : '⏸';
 }
 
 playPauseBtn.addEventListener('click', () => {
@@ -503,12 +630,21 @@ playPauseBtn.addEventListener('click', () => {
   }
 });
 
-jumpToStartBtn.addEventListener('click', () => {
+rewindBtn.addEventListener('click', () => {
   if (currentVideoElement) {
-    currentVideoElement.currentTime = 0;
-    overlayVideo.currentTime = 0;
+    // Rewind by 5 seconds
+    const newTime = Math.max(0, currentVideoElement.currentTime - 5);
+    currentVideoElement.currentTime = newTime;
+    overlayVideo.currentTime = newTime;
     updateFrameInfo(currentVideoElement);
-    updatePlayPauseButton();
+  }
+});
+
+jumpToEndBtn.addEventListener('click', () => {
+  if (currentVideoElement && isFinite(currentVideoElement.duration)) {
+    currentVideoElement.currentTime = currentVideoElement.duration;
+    overlayVideo.currentTime = overlayVideo.duration || currentVideoElement.duration;
+    updateFrameInfo(currentVideoElement);
   }
 });
 
@@ -516,7 +652,8 @@ jumpToStartBtn.addEventListener('click', () => {
 function updatePlaybackButtons() {
   const hasVideo = currentVideoElement !== null;
   playPauseBtn.disabled = !hasVideo;
-  jumpToStartBtn.disabled = !hasVideo;
+  rewindBtn.disabled = !hasVideo;
+  jumpToEndBtn.disabled = !hasVideo;
   updatePlayPauseButton();
 }
 
@@ -567,10 +704,11 @@ function loadNDIStream(streamName) {
   material.needsUpdate = true;
   
   // Hide overlay and frame info until new stream is loaded
-  videoOverlay.classList.remove('active');
+  mapping.classList.remove('active');
   frameInfo.classList.remove('active');
   timelineContainer.classList.remove('active');
   overlayVideo.src = '';
+  overlayImage.src = '';
   
   // Update status
   textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
@@ -626,6 +764,7 @@ function loadNDIStream(streamName) {
           if (material.uniforms.uTexture.value !== canvasTexture) {
             material.uniforms.uTexture.value = canvasTexture;
             material.uniforms.uHasTexture.value = 1.0;
+            material.uniforms.uIsImageTexture.value = 0.0; // NDI stream is video, not image
             material.needsUpdate = true;
             console.log('NDI stream texture applied to plane via Canvas');
           }
@@ -683,10 +822,11 @@ function loadVideoFromPath(videoPath) {
   }
   
   // Hide overlay and frame info until new video is loaded
-  videoOverlay.classList.remove('active');
+  mapping.classList.remove('active');
   frameInfo.classList.remove('active');
   timelineContainer.classList.remove('active');
   overlayVideo.src = '';
+  overlayImage.src = '';
 
   // For default video, use Vite-served URL
   // For other paths (from file input), use the provided file data
@@ -719,6 +859,7 @@ function loadVideoFromPath(videoPath) {
     // Apply texture to shader material
     material.uniforms.uTexture.value = videoTexture;
     material.uniforms.uHasTexture.value = 1.0;
+    material.uniforms.uIsImageTexture.value = 0.0; // Mark as video texture
     
     // Set up overlay video to show current frame
     overlayVideo.src = videoUrl;
@@ -726,6 +867,22 @@ function loadVideoFromPath(videoPath) {
     overlayVideo.loop = true;
     overlayVideo.muted = true;
     overlayVideo.playsInline = true;
+    overlayVideo.style.display = 'block';
+    overlayImage.style.display = 'none';
+    
+    // Adjust mapping overlay to match video aspect ratio
+    // Use the main video element dimensions for more accurate aspect ratio
+    video.addEventListener('loadedmetadata', () => {
+      if (video.videoWidth && video.videoHeight) {
+        adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+      }
+    });
+    // Also listen to overlayVideo as fallback
+    overlayVideo.addEventListener('loadedmetadata', () => {
+      if (overlayVideo.videoWidth && overlayVideo.videoHeight && (!video.videoWidth || !video.videoHeight)) {
+        adjustMappingAspectRatio(overlayVideo.videoWidth, overlayVideo.videoHeight);
+      }
+    });
     
     // Try to get frame rate from video metadata (default to 30fps)
     videoFrameRate = 30; // Default, could be improved with actual video metadata
@@ -742,13 +899,18 @@ function loadVideoFromPath(videoPath) {
     video.addEventListener('timeupdate', syncOverlay);
     
     // Show overlay if checkbox is checked
-    if (showVideoOverlayCheckbox.checked) {
-      videoOverlay.classList.add('active');
+    if (showMappingCheckbox.checked) {
+      mapping.classList.add('active');
     }
     
     // Show frame info and timeline, update them
     frameInfo.classList.add('active');
     timelineContainer.classList.add('active');
+    
+    // Show playback controls for videos
+    if (playbackControlsGroup) {
+      playbackControlsGroup.style.display = 'block';
+    }
     // Initialize timeline max value
     if (isFinite(video.duration) && video.duration > 0) {
       timelineSlider.max = 100;
@@ -804,10 +966,11 @@ textureInput.addEventListener('change', (e) => {
   }
   
   // Hide overlay and frame info until new video is loaded
-  videoOverlay.classList.remove('active');
+  mapping.classList.remove('active');
   frameInfo.classList.remove('active');
   timelineContainer.classList.remove('active');
   overlayVideo.src = '';
+  overlayImage.src = '';
 
   // Check if it's a video file
   if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4')) {
@@ -835,6 +998,7 @@ textureInput.addEventListener('change', (e) => {
         // Apply texture to shader material
         material.uniforms.uTexture.value = videoTexture;
         material.uniforms.uHasTexture.value = 1.0;
+        material.uniforms.uIsImageTexture.value = 0.0; // Mark as video texture
         
         // Set up overlay video to show current frame
         overlayVideo.src = videoUrl;
@@ -842,19 +1006,47 @@ textureInput.addEventListener('change', (e) => {
         overlayVideo.loop = true;
         overlayVideo.muted = true;
         overlayVideo.playsInline = true;
+        overlayVideo.style.display = 'block';
+        overlayImage.style.display = 'none';
+        
+        // Adjust mapping overlay to match video aspect ratio
+        // Use the main video element dimensions for more accurate aspect ratio
+        video.addEventListener('loadedmetadata', () => {
+          if (video.videoWidth && video.videoHeight) {
+            adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+          }
+        });
+        // Also listen to overlayVideo as fallback
+        overlayVideo.addEventListener('loadedmetadata', () => {
+          if (overlayVideo.videoWidth && overlayVideo.videoHeight && (!video.videoWidth || !video.videoHeight)) {
+            adjustMappingAspectRatio(overlayVideo.videoWidth, overlayVideo.videoHeight);
+          }
+        });
         
         // Sync overlay video with main video
         const syncOverlay = () => {
           if (video.readyState >= 2) {
             overlayVideo.currentTime = video.currentTime;
+            updateFrameInfo(video);
           }
         };
         
         // Sync on timeupdate
         video.addEventListener('timeupdate', syncOverlay);
         
-        // Show overlay
-        videoOverlay.classList.add('active');
+        // Show frame info and timeline for videos
+        frameInfo.classList.add('active');
+        timelineContainer.classList.add('active');
+        // Initialize timeline max value
+        if (isFinite(video.duration) && video.duration > 0) {
+          timelineSlider.max = 100;
+        }
+        updateFrameInfo(video);
+        
+        // Show overlay if checkbox is checked
+        if (showMappingCheckbox.checked) {
+          mapping.classList.add('active');
+        }
         
         // Play both videos
         const playPromise = video.play();
@@ -871,6 +1063,7 @@ textureInput.addEventListener('change', (e) => {
         }
         
         currentVideoElement = video;
+        updatePlaybackButtons(); // Enable playback controls
         textureStatus.textContent = `Loaded Video: ${file.name}`;
         textureStatus.classList.add('loaded');
       });
@@ -917,16 +1110,39 @@ textureInput.addEventListener('change', (e) => {
         texture.wrapT = THREE.RepeatWrapping;
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
-        texture.colorSpace = THREE.SRGBColorSpace; // Use sRGB for accurate colors
+        // Don't set colorSpace for images - we'll handle conversion manually in shader
+        // This prevents Three.js from doing automatic conversion that doesn't work with custom shaders
         
         // Apply texture to shader material
         material.uniforms.uTexture.value = texture;
         material.uniforms.uHasTexture.value = 1.0;
+        material.uniforms.uIsImageTexture.value = 1.0; // Mark as image texture
         
-        // Hide overlay and frame info for images (only show for videos)
-        videoOverlay.classList.remove('active');
+        // Show image in mapping overlay
+        overlayImage.src = imageUrl;
+        overlayImage.style.display = 'block';
+        overlayVideo.style.display = 'none';
+        
+        // Adjust mapping overlay to match image aspect ratio
+        overlayImage.onload = () => {
+          if (overlayImage.naturalWidth && overlayImage.naturalHeight) {
+            adjustMappingAspectRatio(overlayImage.naturalWidth, overlayImage.naturalHeight);
+          }
+        };
+        
+        // Hide frame info and timeline for images (only show for videos)
         frameInfo.classList.remove('active');
         timelineContainer.classList.remove('active');
+        
+        // Hide playback controls for images
+        if (playbackControlsGroup) {
+          playbackControlsGroup.style.display = 'none';
+        }
+        
+        // Show mapping overlay if checkbox is checked
+        if (showMappingCheckbox.checked) {
+          mapping.classList.add('active');
+        }
         
         // Disable playback buttons for images
         updatePlaybackButtons();

@@ -1,0 +1,454 @@
+:root {
+    /* Colors - Neumorphic Dark Gray Theme */
+    --color-primary: #5a9fd4; /* Light blue for active states */
+    --color-primary-hover: #6baff4; /* Brighter blue on hover */
+    --color-primary-active: #4a8fc4; /* Darker blue when active */
+    --color-accent: #5a9fd4;
+    --color-accent-hover: #6baff4;
+    --color-accent-active: #4a8fc4;
+    --color-text: #ffffff; /* Clean white text */
+    --color-text-dark: #000000;
+    --color-text-muted: #cccccc; /* Light grey for muted text */
+    --color-bg-dark: #2a2a2a; /* Dark gray background */
+    --color-bg-slider: #3a3a3a; /* Dark gray for sliders */
+    --color-bg-disabled: #4a4a4a; /* Slightly lighter for disabled */
+    --color-debug: #ff6b6b;
+    
+    /* Backgrounds - Neumorphic theme */
+    --bg-body: #e0e0e0; /* Light gray background */
+    --bg-controls: #2a2a2a; /* Dark gray controls */
+    --bg-overlay: #2a2a2a; /* Dark gray overlays */
+    --bg-debug: #2a2a2a;
+    --bg-select: #2a2a2a;
+    --bg-select-hover: #333333;
+    --bg-select-focus: #3a3a3a;
+    --bg-debug-label: rgba(255, 107, 107, 0.9);
+    
+    /* Neumorphic shadows */
+    --shadow-emboss: inset 4px 4px 8px rgba(0, 0, 0, 0.3),
+                     inset -4px -4px 8px rgba(255, 255, 255, 0.1); /* Pressed-in effect */
+    --shadow-raised: 4px 4px 8px rgba(0, 0, 0, 0.3),
+                     -4px -4px 8px rgba(255, 255, 255, 0.1); /* Raised effect */
+    --shadow-primary: rgba(90, 159, 212, 0.3); /* Blue glow for active */
+    --shadow-accent: rgba(255, 140, 0, 0.1);
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 6px;
+    --spacing-md: 8px;
+    --spacing-lg: 10px;
+    --spacing-xl: 15px;
+    --spacing-xxl: 20px;
+    
+    /* Border radius - Neumorphic rounded corners */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-full: 50%;
+    
+    /* Font sizes - Neumorphic style */
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-md: 15px;
+    --font-size-lg: 18px;
+    
+    /* Font families */
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --font-mono: 'Courier New', monospace;
+    
+    /* Sizes */
+    --size-thumb-lg: 18px;
+    --size-thumb-md: 16px;
+    --size-slider-height: 6px;
+    --size-checkbox: 18px;
+    
+    /* Transitions */
+    --transition-fast: 0.2s;
+    
+    /* Z-index */
+    --z-controls: 100;
+    --z-debug: 200;
+    --z-debug-label: 201;
+    
+    /* Layout */
+    --controls-padding: 20px;
+    --controls-gap: 20px;
+    --control-group-margin: 15px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    overflow: hidden;
+    font-family: var(--font-sans);
+    background: var(--bg-body);
+    color: var(--color-text);
+}
+canvas {
+    display: block;
+}
+.control-panel {
+    position: fixed;
+    top: var(--controls-gap);
+    right: var(--controls-gap);
+    left: auto;
+    background: var(--bg-controls);
+    padding: var(--controls-padding);
+    border-radius: var(--radius-xl);
+    border: none;
+    color: var(--color-text);
+    box-shadow: var(--shadow-raised); /* Neumorphic raised effect */
+    z-index: var(--z-controls);
+    text-transform: none;
+    font-variant: normal;
+    cursor: grab;
+    user-select: none;
+}
+
+.control-panel:active {
+    cursor: grabbing;
+}
+.control-group {
+    margin-bottom: var(--control-group-margin);
+}
+.control-group label {
+    display: block;
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-md);
+    font-weight: 400;
+    text-transform: none;
+    font-variant: normal;
+    color: var(--color-text);
+}
+.slider {
+    width: 200px;
+    height: var(--size-slider-height);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-slider);
+    outline: none;
+    -webkit-appearance: none;
+    box-shadow: var(--shadow-emboss); /* Pressed-in neumorphic effect */
+}
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--size-thumb-lg);
+    height: var(--size-thumb-lg);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-raised); /* Raised neumorphic effect */
+    border: none;
+}
+.slider::-webkit-slider-thumb:hover {
+    background: var(--color-primary-hover);
+}
+.slider::-moz-range-thumb {
+    width: var(--size-thumb-lg);
+    height: var(--size-thumb-lg);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-raised); /* Raised neumorphic effect */
+}
+.slider::-moz-range-thumb:hover {
+    background: var(--color-primary-hover);
+}
+.slider-value {
+    display: inline-block;
+    margin-left: var(--spacing-lg);
+    font-size: var(--font-size-md);
+    color: var(--color-text);
+    min-width: 50px;
+    font-weight: 400;
+}
+.file-input-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+.file-input {
+    display: none;
+}
+.file-input-label {
+    display: inline-block;
+    padding: var(--spacing-lg) var(--spacing-xxl);
+    background: var(--bg-controls);
+    color: var(--color-text);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    font-size: var(--font-size-md);
+    font-weight: 400;
+    transition: all var(--transition-fast);
+    text-align: center;
+    width: 100%;
+    box-shadow: var(--shadow-raised);
+    border: none;
+    text-transform: none;
+    font-variant: normal;
+}
+.file-input-label:hover {
+    background: var(--bg-select-hover);
+    box-shadow: var(--shadow-emboss);
+    transform: translateY(1px);
+}
+.file-input-label:active {
+    background: var(--bg-select-focus);
+    transform: translateY(2px);
+    box-shadow: var(--shadow-emboss);
+}
+.texture-status {
+    margin-top: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-style: normal;
+    text-transform: none;
+    font-variant: normal;
+}
+.texture-status.loaded {
+    color: var(--color-text);
+}
+.ndi-select {
+    width: 100%;
+    padding: var(--spacing-lg);
+    background: var(--bg-select);
+    border: none;
+    border-radius: var(--radius-lg);
+    color: var(--color-text);
+    font-size: var(--font-size-md);
+    font-family: var(--font-sans);
+    cursor: pointer;
+    outline: none;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-emboss); /* Pressed-in neumorphic effect */
+    text-transform: none;
+    font-variant: normal;
+}
+.ndi-select:hover {
+    background: var(--bg-select-hover);
+    box-shadow: var(--shadow-emboss);
+}
+.ndi-select:focus {
+    background: var(--bg-select-focus);
+    box-shadow: var(--shadow-emboss);
+    color: var(--color-primary);
+}
+.ndi-select option {
+    background: var(--color-bg-dark);
+    color: var(--color-primary);
+    padding: var(--spacing-md);
+}
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+.checkbox-wrapper input[type="checkbox"] {
+    width: var(--size-checkbox);
+    height: var(--size-checkbox);
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+.checkbox-wrapper label {
+    cursor: pointer;
+    margin: 0;
+}
+.mapping-overlay {
+    position: fixed;
+    bottom: var(--controls-gap);
+    left: 50%;
+    transform: translateX(-50%) scale(1);
+    transform-origin: center bottom;
+    width: 320px;
+    height: 180px;
+    background: var(--bg-overlay);
+    border: none;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    z-index: var(--z-controls);
+    display: none;
+    box-shadow: var(--shadow-raised); /* Neumorphic raised effect */
+    /* Width and height will be set dynamically via JavaScript */
+}
+.mapping-overlay.active {
+    display: block;
+}
+.mapping-overlay video,
+.mapping-overlay img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+.frame-info {
+    color: var(--color-text);
+    font-size: var(--font-size-md);
+    font-weight: 400;
+    margin-bottom: var(--spacing-md);
+    font-family: var(--font-sans);
+    display: none;
+    text-transform: none;
+    font-variant: normal;
+}
+.frame-info.active {
+    display: block;
+}
+.timeline-container {
+    width: 100%;
+    display: none;
+}
+.timeline-container.active {
+    display: block;
+}
+.timeline-slider {
+    width: 100%;
+    height: var(--size-slider-height);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-slider);
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    box-shadow: var(--shadow-emboss); /* Pressed-in neumorphic effect */
+}
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--size-thumb-md);
+    height: var(--size-thumb-md);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-raised); /* Raised neumorphic effect */
+    border: none;
+}
+.timeline-slider::-webkit-slider-thumb:hover {
+    background: var(--color-primary-hover);
+}
+.timeline-slider::-moz-range-thumb {
+    width: var(--size-thumb-md);
+    height: var(--size-thumb-md);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-raised); /* Raised neumorphic effect */
+}
+.timeline-slider::-moz-range-thumb:hover {
+    background: var(--color-primary-hover);
+}
+.playback-controls {
+    display: flex;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+}
+.playback-btn {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    background: var(--bg-controls);
+    color: #ffffff; /* White icons */
+    border: none;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: 400;
+    transition: all var(--transition-fast);
+    font-family: var(--font-sans);
+    box-shadow: var(--shadow-raised);
+    text-shadow: none;
+    text-transform: none;
+    font-variant: normal;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* Make play/pause button larger and more prominent */
+#playPauseBtn {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+}
+
+/* Ensure rewind and jump to end buttons have no blue */
+#rewindBtn,
+#jumpToEndBtn {
+    color: #ffffff; /* White icons */
+    background: var(--bg-controls);
+}
+
+#rewindBtn:hover,
+#jumpToEndBtn:hover {
+    background: var(--bg-select-hover);
+    color: #ffffff; /* White icons on hover */
+}
+
+#rewindBtn:active,
+#jumpToEndBtn:active {
+    background: var(--bg-select-focus);
+    color: #ffffff; /* White icons when active */
+}
+.playback-btn:hover {
+    background: var(--bg-select-hover);
+    box-shadow: var(--shadow-emboss);
+    transform: translateY(1px);
+}
+.playback-btn:active {
+    background: var(--bg-select-focus);
+    transform: translateY(2px) scale(0.95);
+    box-shadow: var(--shadow-emboss);
+}
+.playback-btn:disabled {
+    background: var(--color-bg-disabled);
+    color: #ffffff; /* White icons even when disabled */
+    cursor: not-allowed;
+    opacity: 0.5; /* Reduce opacity instead of changing color */
+}
+.debug-container {
+    position: fixed;
+    top: var(--controls-gap);
+    right: var(--controls-gap);
+    width: 320px;
+    height: 180px;
+    background: var(--bg-debug);
+    border: none;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    z-index: var(--z-debug);
+    display: none;
+    box-shadow: var(--shadow-raised); /* Neumorphic raised effect */
+}
+.debug-container.active {
+    display: block;
+}
+.debug-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.debug-label {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: var(--bg-debug-label);
+    color: var(--color-text-dark);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    z-index: var(--z-debug-label);
+    text-transform: none;
+    font-variant: normal;
+}
