@@ -12,6 +12,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
+// Default camera position (will be set to camera position 1 after presets are defined)
 camera.position.set(5, 5, 5);
 camera.lookAt(0, 0, 0);
 
@@ -29,6 +30,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.target.set(0, 0, 0);
+
+// Note: Default camera position will be set after cameraPositions array is defined
 
 // Add a plane with 16:9 aspect ratio
 const planeWidth = 8;
@@ -600,6 +603,9 @@ showMappingCheckbox.addEventListener('change', (e) => {
 const playPauseBtn = document.getElementById('playPauseBtn');
 const rewindBtn = document.getElementById('rewindBtn');
 const jumpToEndBtn = document.getElementById('jumpToEndBtn');
+const muteBtn = document.getElementById('muteBtn');
+const volumeSlider = document.getElementById('volumeSlider');
+const volumeValue = document.getElementById('volumeValue');
 const playbackControlsGroup = document.getElementById('playbackControlsGroup');
 
 // Function to update play/pause button icon
@@ -615,6 +621,12 @@ function updatePlayPauseButton() {
 
 playPauseBtn.addEventListener('click', () => {
   if (currentVideoElement) {
+    // Unmute on first user interaction (browser autoplay policy)
+    if (currentVideoElement.muted && currentVideoElement.volume > 0) {
+      currentVideoElement.muted = false;
+      updateMuteButton();
+    }
+    
     if (currentVideoElement.paused) {
       currentVideoElement.play().catch(err => {
         console.error('Error playing video:', err);
@@ -648,13 +660,59 @@ jumpToEndBtn.addEventListener('click', () => {
   }
 });
 
+// Mute button functionality
+muteBtn.addEventListener('click', () => {
+  if (currentVideoElement) {
+    currentVideoElement.muted = !currentVideoElement.muted;
+    updateMuteButton();
+  }
+});
+
+// Function to update mute button icon
+function updateMuteButton() {
+  if (!currentVideoElement) {
+    muteBtn.textContent = '🔊';
+    return;
+  }
+  muteBtn.textContent = currentVideoElement.muted ? '🔇' : '🔊';
+}
+
+// Volume slider functionality
+volumeSlider.addEventListener('input', (e) => {
+  const volume = parseFloat(e.target.value) / 100; // Convert 0-100 to 0-1
+  if (currentVideoElement) {
+    currentVideoElement.volume = volume;
+    // If volume is set above 0, unmute the video
+    if (volume > 0 && currentVideoElement.muted) {
+      currentVideoElement.muted = false;
+      updateMuteButton();
+    }
+    // If volume is set to 0, mute the video
+    if (volume === 0 && !currentVideoElement.muted) {
+      currentVideoElement.muted = true;
+      updateMuteButton();
+    }
+  }
+  volumeValue.textContent = Math.round(e.target.value);
+});
+
 // Update button states based on video availability
 function updatePlaybackButtons() {
   const hasVideo = currentVideoElement !== null;
   playPauseBtn.disabled = !hasVideo;
   rewindBtn.disabled = !hasVideo;
   jumpToEndBtn.disabled = !hasVideo;
+  muteBtn.disabled = !hasVideo;
+  volumeSlider.disabled = !hasVideo;
   updatePlayPauseButton();
+  updateMuteButton();
+  
+  // Sync volume slider with video volume when video is loaded
+  if (hasVideo && currentVideoElement) {
+    const volumePercent = Math.round(currentVideoElement.volume * 100);
+    volumeSlider.value = volumePercent;
+    volumeValue.textContent = volumePercent;
+  }
 }
 
 // Initialize button states
@@ -808,7 +866,7 @@ function loadNDIStream(streamName) {
 }
 
 // Default video path
-const DEFAULT_VIDEO_PATH = 'C:\\Users\\tobia\\Downloads\\HealthCareShowCase.mp4';
+const DEFAULT_VIDEO_PATH = '/assets/videos/dundun.mp4';
 
 // Function to load video from path
 function loadVideoFromPath(videoPath) {
@@ -832,8 +890,8 @@ function loadVideoFromPath(videoPath) {
   // For other paths (from file input), use the provided file data
   let videoUrl;
   if (videoPath === DEFAULT_VIDEO_PATH) {
-    // Use Vite server endpoint
-    videoUrl = '/default-video.mp4';
+    // Use public folder path (automatically served by Vite)
+    videoUrl = '/assets/videos/dundun.mp4';
   } else {
     // Try file:// URL as fallback (may not work due to browser security)
     videoUrl = 'file:///' + videoPath.replace(/\\/g, '/');
@@ -844,7 +902,8 @@ function loadVideoFromPath(videoPath) {
   video.src = videoUrl;
   video.crossOrigin = 'anonymous';
   video.loop = true;
-  video.muted = true; // Required for autoplay in most browsers
+  video.muted = true; // Start muted for autoplay to work (browser policy)
+  video.volume = 1.0; // Set volume to 100%
   video.playsInline = true;
   
   video.addEventListener('loadeddata', () => {
@@ -925,11 +984,13 @@ function loadVideoFromPath(videoPath) {
           console.error('Error playing overlay video:', err);
         });
         updatePlayPauseButton();
+        updateMuteButton();
       }).catch(err => {
         console.error('Error playing video:', err);
-        textureStatus.textContent = 'Error: Could not play video';
-        textureStatus.classList.remove('loaded');
+        // If autoplay fails, don't show error - user can click play manually
+        // The video is still loaded and ready to play
         updatePlayPauseButton();
+        updateMuteButton();
       });
     }
     
@@ -983,7 +1044,8 @@ textureInput.addEventListener('change', (e) => {
       video.src = videoUrl;
       video.crossOrigin = 'anonymous';
       video.loop = true;
-      video.muted = true; // Required for autoplay in most browsers
+      video.muted = true; // Start muted for autoplay to work (browser policy)
+      video.volume = 1.0; // Set volume to 100%
       video.playsInline = true;
       
       video.addEventListener('loadeddata', () => {
@@ -1055,10 +1117,14 @@ textureInput.addEventListener('change', (e) => {
             overlayVideo.play().catch(err => {
               console.error('Error playing overlay video:', err);
             });
+            updatePlayPauseButton();
+            updateMuteButton();
           }).catch(err => {
             console.error('Error playing video:', err);
-            textureStatus.textContent = 'Error: Could not play video';
-            textureStatus.classList.remove('loaded');
+            // If autoplay fails, don't show error - user can click play manually
+            // The video is still loaded and ready to play
+            updatePlayPauseButton();
+            updateMuteButton();
           });
         }
         
@@ -1169,12 +1235,278 @@ textureInput.addEventListener('change', (e) => {
   reader.readAsDataURL(file);
 });
 
+// Camera debug panel elements
+const cameraPosX = document.getElementById('cameraPosX');
+const cameraPosY = document.getElementById('cameraPosY');
+const cameraPosZ = document.getElementById('cameraPosZ');
+const cameraRotX = document.getElementById('cameraRotX');
+const cameraRotY = document.getElementById('cameraRotY');
+const cameraRotZ = document.getElementById('cameraRotZ');
+const cameraTargetX = document.getElementById('cameraTargetX');
+const cameraTargetY = document.getElementById('cameraTargetY');
+const cameraTargetZ = document.getElementById('cameraTargetZ');
+const copyCameraBtn = document.getElementById('copyCameraBtn');
+
+// Function to update camera debug info
+function updateCameraDebug() {
+  if (cameraPosX && cameraPosY && cameraPosZ) {
+    // Position
+    cameraPosX.textContent = camera.position.x.toFixed(2);
+    cameraPosY.textContent = camera.position.y.toFixed(2);
+    cameraPosZ.textContent = camera.position.z.toFixed(2);
+  }
+  
+  if (cameraRotX && cameraRotY && cameraRotZ) {
+    // Rotation (Euler angles in radians, converted to degrees)
+    cameraRotX.textContent = (camera.rotation.x * 180 / Math.PI).toFixed(2);
+    cameraRotY.textContent = (camera.rotation.y * 180 / Math.PI).toFixed(2);
+    cameraRotZ.textContent = (camera.rotation.z * 180 / Math.PI).toFixed(2);
+  }
+  
+  if (cameraTargetX && cameraTargetY && cameraTargetZ) {
+    // OrbitControls target
+    cameraTargetX.textContent = controls.target.x.toFixed(2);
+    cameraTargetY.textContent = controls.target.y.toFixed(2);
+    cameraTargetZ.textContent = controls.target.z.toFixed(2);
+  }
+}
+
+// Function to copy camera values to clipboard
+function copyCameraValues() {
+  const pos = {
+    x: parseFloat(camera.position.x.toFixed(2)),
+    y: parseFloat(camera.position.y.toFixed(2)),
+    z: parseFloat(camera.position.z.toFixed(2))
+  };
+  
+  const rot = {
+    x: parseFloat((camera.rotation.x * 180 / Math.PI).toFixed(2)),
+    y: parseFloat((camera.rotation.y * 180 / Math.PI).toFixed(2)),
+    z: parseFloat((camera.rotation.z * 180 / Math.PI).toFixed(2))
+  };
+  
+  const target = {
+    x: parseFloat(controls.target.x.toFixed(2)),
+    y: parseFloat(controls.target.y.toFixed(2)),
+    z: parseFloat(controls.target.z.toFixed(2))
+  };
+  
+  const cameraData = {
+    position: pos,
+    rotation: rot,
+    target: target
+  };
+  
+  // Format as readable text
+  const textFormat = `Position: (${pos.x}, ${pos.y}, ${pos.z})
+Rotation: (${rot.x}, ${rot.y}, ${rot.z})
+Target: (${target.x}, ${target.y}, ${target.z})`;
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(textFormat).then(() => {
+    // Visual feedback
+    const originalText = copyCameraBtn.textContent;
+    copyCameraBtn.textContent = 'Copied!';
+    copyCameraBtn.style.background = 'var(--color-primary)';
+    setTimeout(() => {
+      copyCameraBtn.textContent = originalText;
+      copyCameraBtn.style.background = '';
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy camera values:', err);
+    alert('Failed to copy to clipboard. Please copy manually:\n\n' + textFormat);
+  });
+}
+
+// Add click handler to copy button
+if (copyCameraBtn) {
+  copyCameraBtn.addEventListener('click', copyCameraValues);
+}
+
+// Store/Load camera position during session
+let storedCameraState = null;
+
+const storeCameraBtn = document.getElementById('storeCameraBtn');
+const loadCameraBtn = document.getElementById('loadCameraBtn');
+
+// Function to store current camera state
+function storeCameraState() {
+  storedCameraState = {
+    position: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z
+    },
+    rotation: {
+      x: camera.rotation.x * 180 / Math.PI, // Convert to degrees
+      y: camera.rotation.y * 180 / Math.PI,
+      z: camera.rotation.z * 180 / Math.PI
+    },
+    target: {
+      x: controls.target.x,
+      y: controls.target.y,
+      z: controls.target.z
+    }
+  };
+  
+  // Visual feedback
+  const originalText = storeCameraBtn.textContent;
+  storeCameraBtn.textContent = 'Stored!';
+  storeCameraBtn.style.background = 'var(--color-primary)';
+  setTimeout(() => {
+    storeCameraBtn.textContent = originalText;
+    storeCameraBtn.style.background = '';
+  }, 2000);
+  
+  // Enable load button
+  if (loadCameraBtn) {
+    loadCameraBtn.disabled = false;
+  }
+}
+
+// Function to load stored camera state
+function loadCameraState() {
+  if (!storedCameraState) {
+    console.warn('No camera state stored');
+    return;
+  }
+  
+  // Set camera position
+  camera.position.set(
+    storedCameraState.position.x,
+    storedCameraState.position.y,
+    storedCameraState.position.z
+  );
+  
+  // Set OrbitControls target
+  controls.target.set(
+    storedCameraState.target.x,
+    storedCameraState.target.y,
+    storedCameraState.target.z
+  );
+  
+  // Set camera rotation (convert degrees to radians)
+  camera.rotation.set(
+    storedCameraState.rotation.x * Math.PI / 180,
+    storedCameraState.rotation.y * Math.PI / 180,
+    storedCameraState.rotation.z * Math.PI / 180
+  );
+  
+  // Update controls
+  controls.update();
+  
+  // Update debug display
+  updateCameraDebug();
+  
+  // Visual feedback
+  const originalText = loadCameraBtn.textContent;
+  loadCameraBtn.textContent = 'Loaded!';
+  loadCameraBtn.style.background = 'var(--color-primary)';
+  setTimeout(() => {
+    loadCameraBtn.textContent = originalText;
+    loadCameraBtn.style.background = '';
+  }, 2000);
+}
+
+// Add event listeners
+if (storeCameraBtn) {
+  storeCameraBtn.addEventListener('click', storeCameraState);
+}
+if (loadCameraBtn) {
+  loadCameraBtn.addEventListener('click', loadCameraState);
+  // Initially disable load button until something is stored
+  loadCameraBtn.disabled = true;
+}
+
+// Camera position presets
+const cameraPositions = [
+  {
+    position: { x: 0.03, y: 1.23, z: 8.57 },
+    rotation: { x: -8.16, y: 0.23, z: 0.03 },
+    target: { x: 0, y: 0, z: 0 }
+  },
+  {
+    position: { x: -4.07, y: -0.94, z: 3.3 },
+    rotation: { x: 11.19, y: -31.74, z: 5.94 },
+    target: { x: -1.65, y: -0.18, z: -0.54 }
+  },
+  {
+    position: { x: 0.58, y: 6.57, z: 9.44 },
+    rotation: { x: -34.79, y: -0.03, z: -0.02 },
+    target: { x: 0.59, y: -0.3, z: -0.45 }
+  },
+  {
+    position: { x: 0.62, y: -2.02, z: 3.37 },
+    rotation: { x: 24.26, y: 0.4, z: -0.18 },
+    target: { x: 0.59, y: -0.3, z: -0.45 }
+  }
+];
+
+// Function to set camera position and target
+function setCameraPosition(positionIndex) {
+  if (positionIndex < 0 || positionIndex >= cameraPositions.length) {
+    console.error('Invalid camera position index:', positionIndex);
+    return;
+  }
+  
+  const preset = cameraPositions[positionIndex];
+  
+  // Set camera position
+  camera.position.set(preset.position.x, preset.position.y, preset.position.z);
+  
+  // Set OrbitControls target
+  controls.target.set(preset.target.x, preset.target.y, preset.target.z);
+  
+  // If rotation is specified, set it directly (convert degrees to radians)
+  if (preset.rotation) {
+    camera.rotation.set(
+      preset.rotation.x * Math.PI / 180,
+      preset.rotation.y * Math.PI / 180,
+      preset.rotation.z * Math.PI / 180
+    );
+  } else {
+    // Otherwise, look at target (OrbitControls will handle rotation)
+    camera.lookAt(preset.target.x, preset.target.y, preset.target.z);
+  }
+  
+  // Update controls to apply changes immediately
+  controls.update();
+  
+  // Update debug display
+  updateCameraDebug();
+}
+
+// Add event listeners for camera position buttons
+const cameraPos1Btn = document.getElementById('cameraPos1');
+const cameraPos2Btn = document.getElementById('cameraPos2');
+const cameraPos3Btn = document.getElementById('cameraPos3');
+const cameraPos4Btn = document.getElementById('cameraPos4');
+
+if (cameraPos1Btn) {
+  cameraPos1Btn.addEventListener('click', () => setCameraPosition(0));
+}
+if (cameraPos2Btn) {
+  cameraPos2Btn.addEventListener('click', () => setCameraPosition(1));
+}
+if (cameraPos3Btn) {
+  cameraPos3Btn.addEventListener('click', () => setCameraPosition(2));
+}
+if (cameraPos4Btn) {
+  cameraPos4Btn.addEventListener('click', () => setCameraPosition(3));
+}
+
+// Set default camera to position 1 after everything is initialized
+setCameraPosition(0);
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
   
   // Update controls
   controls.update();
+  
+  // Update camera debug info
+  updateCameraDebug();
   
   // Render the scene
   renderer.render(scene, camera);

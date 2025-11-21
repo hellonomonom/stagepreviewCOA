@@ -65,7 +65,20 @@
                 <button class="playback-btn" id="rewindBtn" aria-label="Rewind">⏪</button>
                 <button class="playback-btn" id="playPauseBtn" aria-label="Play/Pause">▶</button>
                 <button class="playback-btn" id="jumpToEndBtn" aria-label="Jump to end">⏩</button>
+                <button class="playback-btn" id="muteBtn" aria-label="Mute/Unmute">🔊</button>
             </div>
+            <label for="volumeSlider" style="margin-top: 10px;">
+                Volume: <span class="slider-value" id="volumeValue">100</span>%
+            </label>
+            <input 
+                type="range" 
+                id="volumeSlider" 
+                class="slider" 
+                min="0" 
+                max="100" 
+                step="1" 
+                value="100"
+            />
         </div>
         <div class="control-group">
             <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
@@ -79,6 +92,15 @@
                     step="0.1" 
                     value="0"
                 />
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Camera Positions</label>
+            <div class="camera-position-buttons">
+                <button class="camera-position-btn" id="cameraPos1">Position 1</button>
+                <button class="camera-position-btn" id="cameraPos2">Position 2</button>
+                <button class="camera-position-btn" id="cameraPos3">Position 3</button>
+                <button class="camera-position-btn" id="cameraPos4">Position 4</button>
             </div>
         </div>
         <div class="control-group">
@@ -108,6 +130,34 @@
     <div class="debug-container" id="debugContainer">
         <div class="debug-label">NDI Debug (First Stream)</div>
         <video id="debugVideo" muted playsinline autoplay></video>
+    </div>
+    <div class="camera-debug-panel" id="cameraDebugPanel">
+        <div class="debug-panel-header">Camera Debug</div>
+        <div class="debug-panel-content">
+            <div class="debug-info-row">
+                <span class="debug-label-text">Position:</span>
+                <span class="debug-value" id="cameraPosX">0.00</span>,
+                <span class="debug-value" id="cameraPosY">0.00</span>,
+                <span class="debug-value" id="cameraPosZ">0.00</span>
+            </div>
+            <div class="debug-info-row">
+                <span class="debug-label-text">Rotation:</span>
+                <span class="debug-value" id="cameraRotX">0.00</span>,
+                <span class="debug-value" id="cameraRotY">0.00</span>,
+                <span class="debug-value" id="cameraRotZ">0.00</span>
+            </div>
+            <div class="debug-info-row">
+                <span class="debug-label-text">Target:</span>
+                <span class="debug-value" id="cameraTargetX">0.00</span>,
+                <span class="debug-value" id="cameraTargetY">0.00</span>,
+                <span class="debug-value" id="cameraTargetZ">0.00</span>
+            </div>
+            <div class="camera-session-buttons">
+                <button class="copy-camera-btn" id="storeCameraBtn">Store</button>
+                <button class="copy-camera-btn" id="loadCameraBtn">Load</button>
+            </div>
+            <button class="copy-camera-btn" id="copyCameraBtn" style="margin-top: var(--spacing-md);">Copy Camera Values</button>
+        </div>
     </div>
     <script type="module" src="/main.js"></script>
 </body>
