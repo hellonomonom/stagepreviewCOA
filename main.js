@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -33,12 +34,7 @@ controls.target.set(0, 0, 0);
 
 // Note: Default camera position will be set after cameraPositions array is defined
 
-// Add a plane with 16:9 aspect ratio
-const planeWidth = 8;
-const planeHeight = 4.5; // 16:9 aspect ratio (8:4.5)
-const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-
-// Create material with custom shader for black backside
+// Create material with custom shader (used for texture management, referenced by LED shaders)
 const material = new THREE.ShaderMaterial({
   uniforms: {
     uTexture: { value: null },
@@ -84,8 +80,216 @@ const material = new THREE.ShaderMaterial({
   side: THREE.DoubleSide
 });
 
-const displayPlane = new THREE.Mesh(geometry, material);
-scene.add(displayPlane);
+// Create groups for organizing meshes
+const ledsGroup = new THREE.Group();
+ledsGroup.name = 'LEDs';
+const stageGroup = new THREE.Group();
+stageGroup.name = 'Stage';
+
+// Store reference to LED front mesh
+let ledFrontMesh = null;
+
+// Add groups to scene
+scene.add(ledsGroup);
+scene.add(stageGroup);
+
+// GLTF Loader
+const gltfLoader = new GLTFLoader();
+
+// Double-sided shader material for stage meshes
+const stageShaderMaterial = new THREE.ShaderMaterial({
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    
+    void main() {
+      vUv = uv;
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    
+    void main() {
+      // Simple lighting calculation
+      vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+      float lightIntensity = max(dot(vNormal, lightDir), 0.3);
+      
+      // Base color (can be customized)
+      vec3 baseColor = vec3(0.8, 0.8, 0.8);
+      
+      gl_FragColor = vec4(baseColor * lightIntensity, 1.0);
+    }
+  `,
+  side: THREE.DoubleSide
+});
+
+// Shader material for LED meshes that uses the video texture
+function createLEDShaderMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTexture: { value: material.uniforms.uTexture.value }, // Reference to the video texture
+      uHasTexture: { value: material.uniforms.uHasTexture.value },
+      uIsImageTexture: { value: material.uniforms.uIsImageTexture.value }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uTexture;
+      uniform float uHasTexture;
+      uniform float uIsImageTexture;
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      
+      void main() {
+        // Check if this is the back face
+        if (!gl_FrontFacing) {
+          // Backside is black
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        } else {
+          // Front side shows texture or white
+          if (uHasTexture > 0.5) {
+            // Invert V coordinate
+            vec2 invertedUv = vec2(vUv.x, 1.0 - vUv.y);
+            vec4 texColor = texture2D(uTexture, invertedUv);
+            // Use texture directly for both images and videos
+            gl_FragColor = vec4(texColor.rgb, texColor.a);
+          } else {
+            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+          }
+        }
+      }
+    `,
+    side: THREE.DoubleSide
+  });
+}
+
+// Function to update LED shader textures when video texture changes
+function updateLEDShaders() {
+  const videoTexture = material.uniforms.uTexture.value;
+  const hasTexture = material.uniforms.uHasTexture.value;
+  const isImageTexture = material.uniforms.uIsImageTexture.value;
+  
+  ledsGroup.traverse((child) => {
+    if (child.isMesh && child.material && child.material.uniforms) {
+      // Update the texture reference in LED shader
+      child.material.uniforms.uTexture.value = videoTexture;
+      child.material.uniforms.uHasTexture.value = hasTexture;
+      child.material.uniforms.uIsImageTexture.value = isImageTexture;
+      child.material.needsUpdate = true;
+    }
+  });
+}
+
+// Function to apply shader to all meshes in a group
+function applyShaderToGroup(group, shaderMaterial) {
+  group.traverse((child) => {
+    if (child.isMesh) {
+      // Store original material if needed
+      if (!child.userData.originalMaterial) {
+        child.userData.originalMaterial = child.material;
+      }
+      child.material = shaderMaterial.clone();
+    }
+  });
+}
+
+// Mesh file paths organized by category
+const meshFiles = {
+  leds: [
+    '/assets/meshes/ANYMA_Coachella_Stage_v007_LED_FRONT.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v007_LED_SL_GARAGE.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SL_WING.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SR_GARAGE.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SR_WING.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_US_WALL.glb'
+  ],
+  stage: [
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_CATWALK.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_PILLARS.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_CROWD.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_DJ_LIFTABLE.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_GROUND.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_LIFTABLE.glb'
+  ]
+};
+
+// Function to load a single mesh
+function loadMesh(path, targetGroup, isStage = false) {
+  gltfLoader.load(
+    path,
+    (gltf) => {
+      const model = gltf.scene;
+      targetGroup.add(model);
+      
+      // Store reference to LED front mesh
+      if (path.includes('LED_FRONT')) {
+        ledFrontMesh = model;
+      }
+      
+      // Apply shader to stage meshes
+      if (isStage) {
+        model.traverse((child) => {
+          if (child.isMesh) {
+            // Store original material if needed
+            if (!child.userData.originalMaterial) {
+              child.userData.originalMaterial = child.material;
+            }
+            child.material = stageShaderMaterial.clone();
+          }
+        });
+      } else {
+        // Apply LED shader to LED meshes
+        model.traverse((child) => {
+          if (child.isMesh) {
+            // Store original material if needed
+            if (!child.userData.originalMaterial) {
+              child.userData.originalMaterial = child.material;
+            }
+            child.material = createLEDShaderMaterial();
+          }
+        });
+      }
+      
+      console.log(`Loaded mesh: ${path}`);
+    },
+    (progress) => {
+      // Loading progress (optional)
+      if (progress.lengthComputable) {
+        const percentComplete = (progress.loaded / progress.total) * 100;
+        console.log(`Loading ${path}: ${percentComplete.toFixed(0)}%`);
+      }
+    },
+    (error) => {
+      console.error(`Error loading mesh ${path}:`, error);
+    }
+  );
+}
+
+// Load all LED meshes
+meshFiles.leds.forEach(path => {
+  loadMesh(path, ledsGroup, false);
+});
+
+// Load all Stage meshes
+meshFiles.stage.forEach(path => {
+  loadMesh(path, stageGroup, true);
+});
 
 // Add lights - brighter and more neutral for accurate color display
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased intensity
@@ -570,13 +774,15 @@ timelineSlider.addEventListener('input', () => {
 
 // Checkbox to toggle mapping visibility
 const showMappingCheckbox = document.getElementById('showMapping');
-const hideFrontScreenCheckbox = document.getElementById('hideFrontScreen');
+const hideLedFrontCheckbox = document.getElementById('hideLedFront');
 const djDeckHeightSlider = document.getElementById('djDeckHeightSlider');
 const djDeckHeightValue = document.getElementById('djDeckHeightValue');
 
-// Handle hide front screen checkbox
-hideFrontScreenCheckbox.addEventListener('change', (e) => {
-  displayPlane.visible = !e.target.checked;
+// Handle hide LED front checkbox
+hideLedFrontCheckbox.addEventListener('change', (e) => {
+  if (ledFrontMesh) {
+    ledFrontMesh.visible = !e.target.checked;
+  }
 });
 
 // Handle DJ deck height slider
@@ -757,8 +963,11 @@ function loadNDIStream(streamName) {
   }
   
   // Clear the texture from material temporarily
-  material.uniforms.uTexture.value = null;
-  material.uniforms.uHasTexture.value = 0.0;
+    material.uniforms.uTexture.value = null;
+    material.uniforms.uHasTexture.value = 0.0;
+    
+    // Update LED shaders (clear texture)
+    updateLEDShaders();
   material.needsUpdate = true;
   
   // Hide overlay and frame info until new stream is loaded
@@ -823,6 +1032,9 @@ function loadNDIStream(streamName) {
             material.uniforms.uTexture.value = canvasTexture;
             material.uniforms.uHasTexture.value = 1.0;
             material.uniforms.uIsImageTexture.value = 0.0; // NDI stream is video, not image
+            
+            // Update LED shaders with the new texture
+            updateLEDShaders();
             material.needsUpdate = true;
             console.log('NDI stream texture applied to plane via Canvas');
           }
@@ -866,7 +1078,22 @@ function loadNDIStream(streamName) {
 }
 
 // Default video path
-const DEFAULT_VIDEO_PATH = '/assets/videos/dundun.mp4';
+const DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12.mp4';
+
+// Video assets dropdown
+const videoAssetSelect = document.getElementById('videoAssetSelect');
+if (videoAssetSelect) {
+  videoAssetSelect.addEventListener('change', (e) => {
+    const selectedVideo = e.target.value;
+    if (selectedVideo) {
+      loadVideoFromPath(selectedVideo);
+      // Reset file input
+      if (textureInput) {
+        textureInput.value = '';
+      }
+    }
+  });
+}
 
 // Function to load video from path
 function loadVideoFromPath(videoPath) {
@@ -886,12 +1113,14 @@ function loadVideoFromPath(videoPath) {
   overlayVideo.src = '';
   overlayImage.src = '';
 
-  // For default video, use Vite-served URL
-  // For other paths (from file input), use the provided file data
+  // Determine video URL
   let videoUrl;
-  if (videoPath === DEFAULT_VIDEO_PATH) {
+  // If path starts with /assets/videos/, it's from the dropdown (public folder)
+  if (videoPath.startsWith('/assets/videos/')) {
+    videoUrl = videoPath; // Use path directly (served by Vite from public folder)
+  } else if (videoPath === DEFAULT_VIDEO_PATH) {
     // Use public folder path (automatically served by Vite)
-    videoUrl = '/assets/videos/dundun.mp4';
+    videoUrl = '/assets/videos/shG010_Eva_v12.mp4';
   } else {
     // Try file:// URL as fallback (may not work due to browser security)
     videoUrl = 'file:///' + videoPath.replace(/\\/g, '/');
@@ -914,11 +1143,16 @@ function loadVideoFromPath(videoPath) {
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.colorSpace = THREE.SRGBColorSpace; // Use sRGB for accurate colors
+    videoTexture.flipY = true; // Flip Y to match Three.js coordinate system
     
     // Apply texture to shader material
     material.uniforms.uTexture.value = videoTexture;
     material.uniforms.uHasTexture.value = 1.0;
     material.uniforms.uIsImageTexture.value = 0.0; // Mark as video texture
+    material.needsUpdate = true;
+    
+    // Update LED shaders with the new video texture
+    updateLEDShaders();
     
     // Set up overlay video to show current frame
     overlayVideo.src = videoUrl;
@@ -999,6 +1233,11 @@ function loadVideoFromPath(videoPath) {
     textureStatus.textContent = `Loaded Video: ${fileName}`;
     textureStatus.classList.add('loaded');
     
+    // Update video asset dropdown to show current selection
+    if (videoAssetSelect && videoPath.startsWith('/assets/videos/')) {
+      videoAssetSelect.value = videoPath;
+    }
+    
     // Enable playback buttons
     updatePlaybackButtons();
   });
@@ -1016,6 +1255,11 @@ function loadVideoFromPath(videoPath) {
 textureInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  
+  // Reset video asset dropdown when file is selected
+  if (videoAssetSelect) {
+    videoAssetSelect.value = '';
+  }
 
   // Clean up previous video element if it exists
   if (currentVideoElement) {
@@ -1056,11 +1300,16 @@ textureInput.addEventListener('change', (e) => {
         videoTexture.minFilter = THREE.LinearFilter;
         videoTexture.magFilter = THREE.LinearFilter;
         videoTexture.colorSpace = THREE.SRGBColorSpace; // Use sRGB for accurate colors
+        videoTexture.flipY = true; // Flip Y to match Three.js coordinate system
         
         // Apply texture to shader material
         material.uniforms.uTexture.value = videoTexture;
         material.uniforms.uHasTexture.value = 1.0;
         material.uniforms.uIsImageTexture.value = 0.0; // Mark as video texture
+        material.needsUpdate = true;
+        
+        // Update LED shaders with the new video texture
+        updateLEDShaders();
         
         // Set up overlay video to show current frame
         overlayVideo.src = videoUrl;
@@ -1129,6 +1378,12 @@ textureInput.addEventListener('change', (e) => {
         }
         
         currentVideoElement = video;
+        
+        // Reset video asset dropdown when file is loaded
+        if (videoAssetSelect) {
+          videoAssetSelect.value = '';
+        }
+        
         updatePlaybackButtons(); // Enable playback controls
         textureStatus.textContent = `Loaded Video: ${file.name}`;
         textureStatus.classList.add('loaded');
@@ -1182,6 +1437,9 @@ textureInput.addEventListener('change', (e) => {
         // Apply texture to shader material
         material.uniforms.uTexture.value = texture;
         material.uniforms.uHasTexture.value = 1.0;
+        
+        // Update LED shaders with the new texture
+        updateLEDShaders();
         material.uniforms.uIsImageTexture.value = 1.0; // Mark as image texture
         
         // Show image in mapping overlay
@@ -1421,24 +1679,24 @@ if (loadCameraBtn) {
 // Camera position presets
 const cameraPositions = [
   {
-    position: { x: 0.03, y: 1.23, z: 8.57 },
-    rotation: { x: -8.16, y: 0.23, z: 0.03 },
-    target: { x: 0, y: 0, z: 0 }
+    position: { x: -1.63, y: 4.54, z: 65.35 },
+    rotation: { x: -1.52, y: -2.01, z: 0 },
+    target: { x: 0.67, y: 2.81, z: 0.15 }
   },
   {
-    position: { x: -4.07, y: -0.94, z: 3.3 },
-    rotation: { x: 11.19, y: -31.74, z: 5.94 },
-    target: { x: -1.65, y: -0.18, z: -0.54 }
+    position: { x: -28.71, y: 9.17, z: 37.13 },
+    rotation: { x: -9.76, y: -38.05, z: -6.06 },
+    target: { x: 0.67, y: 2.81, z: 0.15 }
   },
   {
-    position: { x: 0.58, y: 6.57, z: 9.44 },
-    rotation: { x: -34.79, y: -0.03, z: -0.02 },
-    target: { x: 0.59, y: -0.3, z: -0.45 }
+    position: { x: -0.6, y: 4.31, z: 56.73 },
+    rotation: { x: -1.52, y: -1.28, z: -0.03 },
+    target: { x: 0.67, y: 2.81, z: 0.15 }
   },
   {
-    position: { x: 0.62, y: -2.02, z: 3.37 },
-    rotation: { x: 24.26, y: 0.4, z: -0.18 },
-    target: { x: 0.59, y: -0.3, z: -0.45 }
+    position: { x: 7.3, y: 38.62, z: 80.96 },
+    rotation: { x: -25.44, y: 2.85, z: 1.35 },
+    target: { x: 3.63, y: 6.96, z: 14.39 }
   }
 ];
 
@@ -1498,12 +1756,26 @@ if (cameraPos4Btn) {
 // Set default camera to position 1 after everything is initialized
 setCameraPosition(0);
 
+// Set default video in dropdown
+if (videoAssetSelect) {
+  videoAssetSelect.value = DEFAULT_VIDEO_PATH;
+}
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
   
   // Update controls
   controls.update();
+  
+  // Update video texture if it exists (VideoTexture auto-updates, but ensure it's marked)
+  if (material.uniforms.uTexture.value) {
+    const texture = material.uniforms.uTexture.value;
+    if (texture instanceof THREE.VideoTexture && texture.source && texture.source.data) {
+      // VideoTexture auto-updates, but ensure it's marked for update
+      texture.needsUpdate = true;
+    }
+  }
   
   // Update camera debug info
   updateCameraDebug();

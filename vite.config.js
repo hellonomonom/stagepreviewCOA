@@ -22,7 +22,7 @@ export default defineConfig({
       name: 'serve-default-video',
       configureServer(server) {
         server.middlewares.use('/default-video.mp4', (req, res, next) => {
-          const videoPath = path.join(__dirname, 'public', 'assets', 'videos', 'dundun.mp4');
+          const videoPath = path.join(__dirname, 'public', 'assets', 'videos', 'ANYMA_HumanNow.mp4');
           if (fs.existsSync(videoPath)) {
             const stat = fs.statSync(videoPath);
             const fileSize = stat.size;

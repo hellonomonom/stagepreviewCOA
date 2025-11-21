@@ -37,7 +37,15 @@
         </div>
         <div class="control-group" id="textureInputGroup">
             <label>Texture</label>
-            <div class="file-input-wrapper">
+            <label for="videoAssetSelect" style="margin-bottom: var(--spacing-sm);">Video Assets</label>
+            <select id="videoAssetSelect" class="ndi-select">
+                <option value="">Select a video...</option>
+                <option value="/assets/videos/ANYMA_DunDun.mp4">ANYMA_DunDun.mp4</option>
+                <option value="/assets/videos/ANYMA_HumanNow.mp4">ANYMA_HumanNow.mp4</option>
+                <option value="/assets/videos/dundun.mp4">dundun.mp4</option>
+                <option value="/assets/videos/shG010_Eva_v12.mp4">shG010_Eva_v12.mp4</option>
+            </select>
+            <div class="file-input-wrapper" style="margin-top: var(--spacing-md);">
                 <input 
                     type="file" 
                     id="textureInput" 
@@ -106,8 +114,8 @@
         <div class="control-group">
             <label>Stage Modification</label>
             <div class="checkbox-wrapper">
-                <input type="checkbox" id="hideFrontScreen">
-                <label for="hideFrontScreen">Hide Front Screen</label>
+                <input type="checkbox" id="hideLedFront">
+                <label for="hideLedFront">Hide LED Front</label>
             </div>
             <label for="djDeckHeightSlider">
                 Height DJ Deck: <span class="slider-value" id="djDeckHeightValue">0</span>
