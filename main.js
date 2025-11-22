@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a1a);
+scene.background = new THREE.Color(0.012, 0.012, 0.012);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -85,9 +85,15 @@ const ledsGroup = new THREE.Group();
 ledsGroup.name = 'LEDs';
 const stageGroup = new THREE.Group();
 stageGroup.name = 'Stage';
+let djLiftableMesh = null; // Reference to the DJ liftable stage mesh
+let artistsMeshes = []; // Array to store individual meshes from artists.glb
+let djArtistMesh = null; // Reference to the DJ artist mesh
 
 // Store reference to LED front mesh
 let ledFrontMesh = null;
+
+// Store references to all loaded LED meshes for swapping
+const loadedLEDMeshes = [];
 
 // Add groups to scene
 scene.add(ledsGroup);
@@ -96,38 +102,113 @@ scene.add(stageGroup);
 // GLTF Loader
 const gltfLoader = new GLTFLoader();
 
-// Double-sided shader material for stage meshes
-const stageShaderMaterial = new THREE.ShaderMaterial({
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec2 vUv;
-    
-    void main() {
-      vUv = uv;
-      vNormal = normalize(normalMatrix * normal);
-      vPosition = position;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec2 vUv;
-    
-    void main() {
-      // Simple lighting calculation
-      vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-      float lightIntensity = max(dot(vNormal, lightDir), 0.3);
+// Shader material factory function with PBR properties
+function createPBRShaderMaterial(defaultBaseColor = [0.8, 0.8, 0.8], defaultRoughness = 0.5, defaultSpecular = 0.5) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Vector3(...defaultBaseColor) },
+      uRoughness: { value: defaultRoughness },
+      uSpecular: { value: defaultSpecular },
+      uCameraPosition: { value: new THREE.Vector3() }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      varying vec2 vUv;
+      varying vec3 vWorldPosition;
       
-      // Base color (can be customized)
-      vec3 baseColor = vec3(0.8, 0.8, 0.8);
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uBaseColor;
+      uniform float uRoughness;
+      uniform float uSpecular;
+      uniform vec3 uCameraPosition;
       
-      gl_FragColor = vec4(baseColor * lightIntensity, 1.0);
-    }
-  `,
-  side: THREE.DoubleSide
-});
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      varying vec2 vUv;
+      varying vec3 vWorldPosition;
+      
+      void main() {
+        vec3 normal = normalize(vNormal);
+        
+        // Calculate view direction from world position to camera
+        vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
+        
+        // Simple lighting calculation
+        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+        float NdotL = max(dot(normal, lightDir), 0.0);
+        
+        // Ambient light
+        vec3 ambient = uBaseColor * 0.3;
+        
+        // Diffuse lighting
+        vec3 diffuse = uBaseColor * NdotL * 0.7;
+        
+        // Specular highlight
+        vec3 halfDir = normalize(lightDir + viewDir);
+        float NdotH = max(dot(normal, halfDir), 0.0);
+        float specPower = mix(1.0, 256.0, 1.0 - uRoughness);
+        vec3 specular = vec3(pow(NdotH, specPower)) * uSpecular;
+        
+        // Combine
+        vec3 finalColor = ambient + diffuse + specular;
+        
+        gl_FragColor = vec4(finalColor, 1.0);
+      }
+    `,
+    side: THREE.DoubleSide
+  });
+}
+
+// Create shader materials for different asset types
+const shaderMaterials = {
+  base: createPBRShaderMaterial([0.188, 0.188, 0.188], 0.905, 0.300),
+  artists: createPBRShaderMaterial([0.722, 0.722, 0.722], 0.604, 0.500),
+  stage: createPBRShaderMaterial([0.239, 0.239, 0.239], 0.700, 0.200),
+  pillars: createPBRShaderMaterial([0.420, 0.420, 0.420], 1.000, 0.211),
+  floor: createPBRShaderMaterial([0.129, 0.129, 0.129], 0.900, 0.000)
+};
+
+// Update all shader materials to ensure correct values
+shaderMaterials.base.uniforms.uBaseColor.value.set(0.188, 0.188, 0.188);
+shaderMaterials.base.uniforms.uRoughness.value = 0.905;
+shaderMaterials.base.uniforms.uSpecular.value = 0.300;
+
+shaderMaterials.artists.uniforms.uBaseColor.value.set(0.722, 0.722, 0.722);
+shaderMaterials.artists.uniforms.uRoughness.value = 0.604;
+shaderMaterials.artists.uniforms.uSpecular.value = 0.500;
+
+shaderMaterials.stage.uniforms.uBaseColor.value.set(0.239, 0.239, 0.239);
+shaderMaterials.stage.uniforms.uRoughness.value = 0.700;
+shaderMaterials.stage.uniforms.uSpecular.value = 0.200;
+
+shaderMaterials.pillars.uniforms.uBaseColor.value.set(0.420, 0.420, 0.420);
+shaderMaterials.pillars.uniforms.uRoughness.value = 1.000;
+shaderMaterials.pillars.uniforms.uSpecular.value = 0.211;
+
+shaderMaterials.floor.uniforms.uBaseColor.value.set(0.129, 0.129, 0.129);
+shaderMaterials.floor.uniforms.uRoughness.value = 0.900;
+shaderMaterials.floor.uniforms.uSpecular.value = 0.000;
+
+// Store references to all materials for UI control
+const materialReferences = {
+  base: [],
+  artists: [],
+  stage: [],
+  pillars: [],
+  floor: []
+};
+
+// Double-sided shader material for stage meshes (legacy, kept for backwards compatibility)
+const stageShaderMaterial = shaderMaterials.stage;
 
 // Shader material for LED meshes that uses the video texture
 function createLEDShaderMaterial() {
@@ -209,25 +290,83 @@ function applyShaderToGroup(group, shaderMaterial) {
   });
 }
 
+// LED mesh file paths for different mapping types
+const ledMeshFiles = {
+  festival: [
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v007_LED_FRONT.glb',
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v007_LED_SL_GARAGE.glb',
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SL_WING.glb',
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SR_GARAGE.glb',
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SR_WING.glb',
+    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_US_WALL.glb'
+  ],
+  frontProjection: [
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_Front_FrontP.glb',
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SL_GARAGE_FrontP.glb',
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SL_WING_FrontP.glb',
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb',
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SR_WING_FrontP.glb',
+    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_US_WALL_FrontP.glb'
+  ],
+  frontProjectionPerspective: [
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_GARAGE.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_WING.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_GARAGE.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_WING.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_US_WALL.glb'
+  ]
+};
+
+// Current mapping type (default to frontProjection)
+let currentMappingType = 'frontProjection';
+
 // Mesh file paths organized by category
 const meshFiles = {
-  leds: [
-    '/assets/meshes/ANYMA_Coachella_Stage_v007_LED_FRONT.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v007_LED_SL_GARAGE.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SL_WING.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SR_GARAGE.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_SR_WING.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_LED_US_WALL.glb'
-  ],
+  leds: ledMeshFiles[currentMappingType],
   stage: [
     '/assets/meshes/ANYMA_Coachella_Stage_v008_CATWALK.glb',
     '/assets/meshes/ANYMA_Coachella_Stage_v008_PILLARS.glb',
     '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_CROWD.glb',
     '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_DJ_LIFTABLE.glb',
     '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_GROUND.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_LIFTABLE.glb'
+    '/assets/meshes/ANYMA_Coachella_Stage_v010_STAGE_ARTISTS.glb',
+    '/assets/meshes/ANYMA_Coachella_Stage_v010_FLOOR.glb'
   ]
 };
+
+// Function to determine which shader type to use based on filename
+function getShaderType(path) {
+  const lowerPath = path.toLowerCase();
+  
+  // Base shader: CATWALK, STAGE_GROUND, STAGE_DJ
+  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground') || lowerPath.includes('stage_dj')) {
+    return 'base';
+  }
+  
+  // Artists shader
+  if (lowerPath.includes('artists')) {
+    return 'artists';
+  }
+  
+  // Stage shader: LIFTABLE, CROWD
+  if (lowerPath.includes('liftable') || lowerPath.includes('crowd')) {
+    return 'stage';
+  }
+  
+  // Pillars shader
+  if (lowerPath.includes('pillars')) {
+    return 'pillars';
+  }
+  
+  // Floor shader
+  if (lowerPath.includes('floor')) {
+    return 'floor';
+  }
+  
+  // Default to stage shader for other stage meshes
+  return 'stage';
+}
 
 // Function to load a single mesh
 function loadMesh(path, targetGroup, isStage = false) {
@@ -237,20 +376,85 @@ function loadMesh(path, targetGroup, isStage = false) {
       const model = gltf.scene;
       targetGroup.add(model);
       
-      // Store reference to LED front mesh
-      if (path.includes('LED_FRONT')) {
-        ledFrontMesh = model;
+      // Store reference to LED mesh if it's an LED mesh
+      if (!isStage && targetGroup === ledsGroup) {
+        loadedLEDMeshes.push(model);
+        
+        // Store reference to LED front mesh (check for both FRONT and Front naming)
+        if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
+          ledFrontMesh = model;
+        }
       }
       
-      // Apply shader to stage meshes
       if (isStage) {
+        // Store reference to DJ liftable mesh
+        if (path.includes('STAGE_DJ_LIFTABLE') || path.includes('Stage_DJ_Liftable')) {
+          djLiftableMesh = model;
+          console.log('DJ liftable mesh loaded');
+          
+          // If DJ artist mesh is already loaded, parent it to the liftable stage
+          if (djArtistMesh) {
+            // Remove from current parent
+            if (djArtistMesh.parent) {
+              djArtistMesh.parent.remove(djArtistMesh);
+            }
+            // Add to liftable stage mesh
+            djLiftableMesh.add(djArtistMesh);
+            console.log('Parented DJ artist mesh to liftable stage');
+          }
+        }
+        
+        // Store individual meshes from artists model for individual control
+        if (path.includes('ARTISTS') || path.includes('Artists') || path.includes('artists')) {
+          model.traverse((child) => {
+            if (child.isMesh) {
+              artistsMeshes.push({
+                mesh: child,
+                name: child.name || 'Unnamed',
+                parent: child.parent
+              });
+              console.log(`Stored artists mesh: ${child.name || 'Unnamed'} (parent: ${child.parent?.name || 'root'})`);
+              
+              // Store reference to DJ artist mesh
+              if (child.name && (child.name.includes('DJ') || child.name.includes('dj'))) {
+                djArtistMesh = child;
+                console.log(`Found DJ artist mesh: ${child.name}`);
+                
+                // Parent DJ artist mesh to liftable stage if it's already loaded
+                if (djLiftableMesh) {
+                  // Remove from current parent
+                  if (child.parent) {
+                    child.parent.remove(child);
+                  }
+                  // Add to liftable stage mesh
+                  djLiftableMesh.add(child);
+                  console.log('Parented DJ artist mesh to liftable stage');
+                }
+              }
+            }
+          });
+        }
+        
+        // Determine shader type based on filename
+        const shaderType = getShaderType(path);
+        const shaderMaterial = shaderMaterials[shaderType];
+        
         model.traverse((child) => {
           if (child.isMesh) {
             // Store original material if needed
             if (!child.userData.originalMaterial) {
               child.userData.originalMaterial = child.material;
             }
-            child.material = stageShaderMaterial.clone();
+            
+            // Clone the shader material for this mesh
+            const clonedMaterial = shaderMaterial.clone();
+            child.material = clonedMaterial;
+            
+            // Store reference for UI control
+            if (!materialReferences[shaderType]) {
+              materialReferences[shaderType] = [];
+            }
+            materialReferences[shaderType].push(clonedMaterial);
           }
         });
       } else {
@@ -281,10 +485,55 @@ function loadMesh(path, targetGroup, isStage = false) {
   );
 }
 
-// Load all LED meshes
-meshFiles.leds.forEach(path => {
-  loadMesh(path, ledsGroup, false);
-});
+// Function to load LED meshes
+function loadLEDMeshes(mappingType) {
+  // Clear existing LED meshes
+  loadedLEDMeshes.forEach(mesh => {
+    ledsGroup.remove(mesh);
+    // Dispose of geometry and materials
+    mesh.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      }
+    });
+  });
+  loadedLEDMeshes.length = 0;
+  ledFrontMesh = null;
+  
+  // Load new LED meshes
+  const paths = ledMeshFiles[mappingType];
+  paths.forEach(path => {
+    loadMesh(path, ledsGroup, false);
+  });
+}
+
+// Load initial LED meshes (Front Projection by default)
+loadLEDMeshes(currentMappingType);
+
+// Hide front screen by default for Festival Mapping, show for Front Projection types
+setTimeout(() => {
+  const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+  if (ledFrontMesh) {
+    if (currentMappingType === 'festival') {
+      ledFrontMesh.visible = false;
+      if (hideLedFrontCheckbox) {
+        hideLedFrontCheckbox.checked = true;
+      }
+    } else if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
+      ledFrontMesh.visible = true;
+      if (hideLedFrontCheckbox) {
+        hideLedFrontCheckbox.checked = false;
+      }
+    }
+  }
+}, 100);
 
 // Load all Stage meshes
 meshFiles.stage.forEach(path => {
@@ -301,19 +550,21 @@ directionalLight.castShadow = true;
 scene.add(directionalLight);
 
 // Texture loading
-const controlPanel = document.getElementById('controlPanel');
+const settingsPanel = document.getElementById('settingsPanel');
 const textureInput = document.getElementById('textureInput');
-const textureStatus = document.getElementById('textureStatus');
+const textureStatus = document.getElementById('textureStatus'); // May be null - element was removed
 
 // Make control panel draggable
 let isDragging = false;
 let isDraggingCamera = false;
+let isDraggingStyleShader = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let panelStartX = 0;
 let panelStartY = 0;
 
 const cameraPanel = document.getElementById('cameraPanel');
+const styleShaderPanel = document.getElementById('styleShaderPanel');
 
 // Helper function to make panel draggable
 function makePanelDraggable(panel, dragStateVar) {
@@ -330,8 +581,10 @@ function makePanelDraggable(panel, dragStateVar) {
     if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header'))) {
       if (dragStateVar === 'control') {
         isDragging = true;
-      } else {
+      } else if (dragStateVar === 'camera') {
         isDraggingCamera = true;
+      } else if (dragStateVar === 'styleShader') {
+        isDraggingStyleShader = true;
       }
       dragStartX = e.clientX;
       dragStartY = e.clientY;
@@ -347,14 +600,77 @@ function makePanelDraggable(panel, dragStateVar) {
 }
 
 // Make control panel draggable
-makePanelDraggable(controlPanel, 'control');
+makePanelDraggable(settingsPanel, 'control');
 
 // Make camera panel draggable
 makePanelDraggable(cameraPanel, 'camera');
 
-// Handle mouse move for both panels
+// Make combined style-shader panel draggable
+makePanelDraggable(styleShaderPanel, 'styleShader');
+
+// Tab switching
+const styleTabBtn = document.getElementById('styleTabBtn');
+const shaderTabBtn = document.getElementById('shaderTabBtn');
+const styleTabPanel = document.getElementById('styleTabPanel');
+const shaderTabPanel = document.getElementById('shaderTabPanel');
+
+function switchTab(activeTabName) {
+  // Update buttons
+  styleTabBtn?.classList.toggle('active', activeTabName === 'style');
+  shaderTabBtn?.classList.toggle('active', activeTabName === 'shader');
+  
+  // Update panels
+  styleTabPanel?.classList.toggle('active', activeTabName === 'style');
+  shaderTabPanel?.classList.toggle('active', activeTabName === 'shader');
+}
+
+if (styleTabBtn) {
+  styleTabBtn.addEventListener('click', () => {
+    switchTab('style');
+  });
+}
+
+if (shaderTabBtn) {
+  shaderTabBtn.addEventListener('click', () => {
+    switchTab('shader');
+  });
+}
+
+// Initialize with Style tab active
+switchTab('style');
+
+// Style-Shader panel minimize toggle
+const styleShaderPanelToggle = document.getElementById('styleShaderPanelToggle');
+if (styleShaderPanelToggle && styleShaderPanel) {
+  // Initialize as minimized (class is already in HTML)
+  
+  styleShaderPanelToggle.addEventListener('click', () => {
+    styleShaderPanel.classList.toggle('minimized');
+    styleShaderPanelToggle.textContent = styleShaderPanel.classList.contains('minimized') ? '+' : '−';
+  });
+}
+
+// Settings panel minimize toggle
+const settingsPanelToggle = document.getElementById('settingsPanelToggle');
+if (settingsPanelToggle && settingsPanel) {
+  settingsPanelToggle.addEventListener('click', () => {
+    settingsPanel.classList.toggle('minimized');
+    settingsPanelToggle.textContent = settingsPanel.classList.contains('minimized') ? '+' : '−';
+  });
+}
+
+// Camera panel minimize toggle
+const cameraPanelToggle = document.getElementById('cameraPanelToggle');
+if (cameraPanelToggle && cameraPanel) {
+  cameraPanelToggle.addEventListener('click', () => {
+    cameraPanel.classList.toggle('minimized');
+    cameraPanelToggle.textContent = cameraPanel.classList.contains('minimized') ? '+' : '−';
+  });
+}
+
+// Handle mouse move for all panels
 document.addEventListener('mousemove', (e) => {
-  if (isDragging && controlPanel) {
+  if (isDragging && settingsPanel) {
     const deltaX = e.clientX - dragStartX;
     const deltaY = e.clientY - dragStartY;
     
@@ -362,16 +678,16 @@ document.addEventListener('mousemove', (e) => {
     let newY = panelStartY + deltaY;
     
     // Keep panel within viewport bounds
-    const panelRect = controlPanel.getBoundingClientRect();
+    const panelRect = settingsPanel.getBoundingClientRect();
     const maxX = window.innerWidth - panelRect.width;
     const maxY = window.innerHeight - panelRect.height;
     
     newX = Math.max(0, Math.min(newX, maxX));
     newY = Math.max(0, Math.min(newY, maxY));
     
-    controlPanel.style.left = `${newX}px`;
-    controlPanel.style.top = `${newY}px`;
-    controlPanel.style.right = 'auto';
+    settingsPanel.style.left = `${newX}px`;
+    settingsPanel.style.top = `${newY}px`;
+    settingsPanel.style.right = 'auto';
   }
   
   if (isDraggingCamera && cameraPanel) {
@@ -393,19 +709,560 @@ document.addEventListener('mousemove', (e) => {
     cameraPanel.style.top = `${newY}px`;
     cameraPanel.style.right = 'auto';
   }
+  
+  if (isDraggingStyleShader && styleShaderPanel) {
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    let newX = panelStartX + deltaX;
+    let newY = panelStartY + deltaY;
+    
+    // Keep panel within viewport bounds
+    const panelRect = styleShaderPanel.getBoundingClientRect();
+    const maxX = window.innerWidth - panelRect.width;
+    const maxY = window.innerHeight - panelRect.height;
+    
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    
+    styleShaderPanel.style.left = `${newX}px`;
+    styleShaderPanel.style.top = `${newY}px`;
+    styleShaderPanel.style.transform = 'none';
+  }
 });
 
-// Handle mouse up for both panels
+// Handle mouse up for all panels
 document.addEventListener('mouseup', () => {
-  if (isDragging && controlPanel) {
+  if (isDragging && settingsPanel) {
     isDragging = false;
-    controlPanel.style.cursor = 'grab';
+    settingsPanel.style.cursor = 'grab';
   }
   if (isDraggingCamera && cameraPanel) {
     isDraggingCamera = false;
     cameraPanel.style.cursor = 'grab';
   }
+  if (isDraggingStyleShader && styleShaderPanel) {
+    isDraggingStyleShader = false;
+    styleShaderPanel.style.cursor = 'grab';
+  }
 });
+
+// Shader Controls - Wire up UI to update shader uniforms
+function updateShaderUniforms(shaderType, uniformName, value) {
+  if (!materialReferences[shaderType] || materialReferences[shaderType].length === 0) {
+    console.log(`No materials found for shader type: ${shaderType}`);
+    return;
+  }
+  
+  materialReferences[shaderType].forEach(material => {
+    if (material && material.uniforms && material.uniforms[uniformName]) {
+      if (uniformName === 'uBaseColor') {
+        material.uniforms[uniformName].value.set(...value);
+      } else {
+        material.uniforms[uniformName].value = value;
+      }
+      material.needsUpdate = true;
+    }
+  });
+}
+
+// Function to update UI controls to match current shader material values
+function syncControlsToShaderValues(shaderType, material) {
+  if (!material || !material.uniforms) return;
+  
+  const baseColor = material.uniforms.uBaseColor.value;
+  const roughness = material.uniforms.uRoughness.value;
+  const specular = material.uniforms.uSpecular.value;
+  
+  // Update sliders and value displays
+  const colorR = document.getElementById(`${shaderType}ColorR`);
+  const colorG = document.getElementById(`${shaderType}ColorG`);
+  const colorB = document.getElementById(`${shaderType}ColorB`);
+  const colorPicker = document.getElementById(`${shaderType}ColorPicker`);
+  const roughnessSlider = document.getElementById(`${shaderType}Roughness`);
+  const specularSlider = document.getElementById(`${shaderType}Specular`);
+  
+  if (colorR) {
+    colorR.value = baseColor.x.toFixed(3);
+    const valueEl = document.getElementById(`${shaderType}ColorRValue`);
+    if (valueEl) valueEl.textContent = baseColor.x.toFixed(3);
+  }
+  if (colorG) {
+    colorG.value = baseColor.y.toFixed(3);
+    const valueEl = document.getElementById(`${shaderType}ColorGValue`);
+    if (valueEl) valueEl.textContent = baseColor.y.toFixed(3);
+  }
+  if (colorB) {
+    colorB.value = baseColor.z.toFixed(3);
+    const valueEl = document.getElementById(`${shaderType}ColorBValue`);
+    if (valueEl) valueEl.textContent = baseColor.z.toFixed(3);
+  }
+  
+  // Update color picker
+  if (colorPicker) {
+    const hex = '#' + [baseColor.x, baseColor.y, baseColor.z].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    colorPicker.value = hex;
+  }
+  
+  if (roughnessSlider) {
+    roughnessSlider.value = roughness.toFixed(3);
+    const valueEl = document.getElementById(`${shaderType}RoughnessValue`);
+    if (valueEl) valueEl.textContent = roughness.toFixed(3);
+  }
+  
+  if (specularSlider) {
+    specularSlider.value = specular.toFixed(3);
+    const valueEl = document.getElementById(`${shaderType}SpecularValue`);
+    if (valueEl) valueEl.textContent = specular.toFixed(3);
+  }
+}
+
+// Initialize shader controls
+function initShaderControls() {
+  console.log('Initializing shader controls...');
+  console.log('Material references:', materialReferences);
+  
+  // Sync all controls to match current shader material values
+  Object.keys(shaderMaterials).forEach(shaderType => {
+    const material = shaderMaterials[shaderType];
+    syncControlsToShaderValues(shaderType, material);
+  });
+  
+  // Artists shader controls
+  const artistsColorR = document.getElementById('artistsColorR');
+  const artistsColorG = document.getElementById('artistsColorG');
+  const artistsColorB = document.getElementById('artistsColorB');
+  const artistsColorPicker = document.getElementById('artistsColorPicker');
+  const artistsRoughness = document.getElementById('artistsRoughness');
+  const artistsSpecular = document.getElementById('artistsSpecular');
+
+  function updateArtistsColor() {
+    const r = parseFloat(artistsColorR.value);
+    const g = parseFloat(artistsColorG.value);
+    const b = parseFloat(artistsColorB.value);
+    console.log(`Updating artists color to: ${r}, ${g}, ${b}`);
+    console.log(`Materials in artists array:`, materialReferences['artists']);
+    updateShaderUniforms('artists', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('artistsColorRValue')) document.getElementById('artistsColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('artistsColorGValue')) document.getElementById('artistsColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('artistsColorBValue')) document.getElementById('artistsColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (artistsColorPicker) artistsColorPicker.value = hex;
+  }
+
+  if (artistsColorR && artistsColorG && artistsColorB) {
+    artistsColorR.addEventListener('input', updateArtistsColor);
+    artistsColorG.addEventListener('input', updateArtistsColor);
+    artistsColorB.addEventListener('input', updateArtistsColor);
+    console.log('Artists color controls wired up');
+  }
+
+  if (artistsColorPicker) {
+    artistsColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      artistsColorR.value = r;
+      artistsColorG.value = g;
+      artistsColorB.value = b;
+      updateArtistsColor();
+    });
+  }
+
+  if (artistsRoughness) {
+    artistsRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('artists', 'uRoughness', value);
+      if (document.getElementById('artistsRoughnessValue')) document.getElementById('artistsRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (artistsSpecular) {
+    artistsSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('artists', 'uSpecular', value);
+      if (document.getElementById('artistsSpecularValue')) document.getElementById('artistsSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
+  // Base shader controls
+  const baseColorR = document.getElementById('baseColorR');
+  const baseColorG = document.getElementById('baseColorG');
+  const baseColorB = document.getElementById('baseColorB');
+  const baseColorPicker = document.getElementById('baseColorPicker');
+  const baseRoughness = document.getElementById('baseRoughness');
+  const baseSpecular = document.getElementById('baseSpecular');
+
+  function updateBaseColor() {
+    const r = parseFloat(baseColorR.value);
+    const g = parseFloat(baseColorG.value);
+    const b = parseFloat(baseColorB.value);
+    updateShaderUniforms('base', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('baseColorRValue')) document.getElementById('baseColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('baseColorGValue')) document.getElementById('baseColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('baseColorBValue')) document.getElementById('baseColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (baseColorPicker) baseColorPicker.value = hex;
+  }
+
+  if (baseColorR && baseColorG && baseColorB) {
+    baseColorR.addEventListener('input', updateBaseColor);
+    baseColorG.addEventListener('input', updateBaseColor);
+    baseColorB.addEventListener('input', updateBaseColor);
+  }
+
+  if (baseColorPicker) {
+    baseColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      baseColorR.value = r;
+      baseColorG.value = g;
+      baseColorB.value = b;
+      updateBaseColor();
+    });
+  }
+
+  if (baseRoughness) {
+    baseRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('base', 'uRoughness', value);
+      if (document.getElementById('baseRoughnessValue')) document.getElementById('baseRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (baseSpecular) {
+    baseSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('base', 'uSpecular', value);
+      if (document.getElementById('baseSpecularValue')) document.getElementById('baseSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
+  // Stage shader controls
+  const stageColorR = document.getElementById('stageColorR');
+  const stageColorG = document.getElementById('stageColorG');
+  const stageColorB = document.getElementById('stageColorB');
+  const stageColorPicker = document.getElementById('stageColorPicker');
+  const stageRoughness = document.getElementById('stageRoughness');
+  const stageSpecular = document.getElementById('stageSpecular');
+
+  function updateStageColor() {
+    const r = parseFloat(stageColorR.value);
+    const g = parseFloat(stageColorG.value);
+    const b = parseFloat(stageColorB.value);
+    updateShaderUniforms('stage', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('stageColorRValue')) document.getElementById('stageColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('stageColorGValue')) document.getElementById('stageColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('stageColorBValue')) document.getElementById('stageColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (stageColorPicker) stageColorPicker.value = hex;
+  }
+
+  if (stageColorR && stageColorG && stageColorB) {
+    stageColorR.addEventListener('input', updateStageColor);
+    stageColorG.addEventListener('input', updateStageColor);
+    stageColorB.addEventListener('input', updateStageColor);
+  }
+
+  if (stageColorPicker) {
+    stageColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      stageColorR.value = r;
+      stageColorG.value = g;
+      stageColorB.value = b;
+      updateStageColor();
+    });
+  }
+
+  if (stageRoughness) {
+    stageRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('stage', 'uRoughness', value);
+      if (document.getElementById('stageRoughnessValue')) document.getElementById('stageRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (stageSpecular) {
+    stageSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('stage', 'uSpecular', value);
+      if (document.getElementById('stageSpecularValue')) document.getElementById('stageSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
+  // Pillars shader controls
+  const pillarsColorR = document.getElementById('pillarsColorR');
+  const pillarsColorG = document.getElementById('pillarsColorG');
+  const pillarsColorB = document.getElementById('pillarsColorB');
+  const pillarsColorPicker = document.getElementById('pillarsColorPicker');
+  const pillarsRoughness = document.getElementById('pillarsRoughness');
+  const pillarsSpecular = document.getElementById('pillarsSpecular');
+
+  function updatePillarsColor() {
+    const r = parseFloat(pillarsColorR.value);
+    const g = parseFloat(pillarsColorG.value);
+    const b = parseFloat(pillarsColorB.value);
+    updateShaderUniforms('pillars', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('pillarsColorRValue')) document.getElementById('pillarsColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('pillarsColorGValue')) document.getElementById('pillarsColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('pillarsColorBValue')) document.getElementById('pillarsColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (pillarsColorPicker) pillarsColorPicker.value = hex;
+  }
+
+  if (pillarsColorR && pillarsColorG && pillarsColorB) {
+    pillarsColorR.addEventListener('input', updatePillarsColor);
+    pillarsColorG.addEventListener('input', updatePillarsColor);
+    pillarsColorB.addEventListener('input', updatePillarsColor);
+  }
+
+  if (pillarsColorPicker) {
+    pillarsColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      pillarsColorR.value = r;
+      pillarsColorG.value = g;
+      pillarsColorB.value = b;
+      updatePillarsColor();
+    });
+  }
+
+  if (pillarsRoughness) {
+    pillarsRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('pillars', 'uRoughness', value);
+      if (document.getElementById('pillarsRoughnessValue')) document.getElementById('pillarsRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (pillarsSpecular) {
+    pillarsSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('pillars', 'uSpecular', value);
+      if (document.getElementById('pillarsSpecularValue')) document.getElementById('pillarsSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
+  // Floor shader controls
+  const floorColorR = document.getElementById('floorColorR');
+  const floorColorG = document.getElementById('floorColorG');
+  const floorColorB = document.getElementById('floorColorB');
+  const floorColorPicker = document.getElementById('floorColorPicker');
+  const floorRoughness = document.getElementById('floorRoughness');
+  const floorSpecular = document.getElementById('floorSpecular');
+
+  function updateFloorColor() {
+    const r = parseFloat(floorColorR.value);
+    const g = parseFloat(floorColorG.value);
+    const b = parseFloat(floorColorB.value);
+    updateShaderUniforms('floor', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('floorColorRValue')) document.getElementById('floorColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('floorColorGValue')) document.getElementById('floorColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('floorColorBValue')) document.getElementById('floorColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (floorColorPicker) floorColorPicker.value = hex;
+  }
+
+  if (floorColorR && floorColorG && floorColorB) {
+    floorColorR.addEventListener('input', updateFloorColor);
+    floorColorG.addEventListener('input', updateFloorColor);
+    floorColorB.addEventListener('input', updateFloorColor);
+  }
+
+  if (floorColorPicker) {
+    floorColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      floorColorR.value = r;
+      floorColorG.value = g;
+      floorColorB.value = b;
+      updateFloorColor();
+    });
+  }
+
+  if (floorRoughness) {
+    floorRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('floor', 'uRoughness', value);
+      if (document.getElementById('floorRoughnessValue')) document.getElementById('floorRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (floorSpecular) {
+    floorSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('floor', 'uSpecular', value);
+      if (document.getElementById('floorSpecularValue')) document.getElementById('floorSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
+  // Copy button functionality - reads current values from UI controls
+  function copyShaderValues(shaderType) {
+    // Get current values from UI controls
+    const colorR = document.getElementById(`${shaderType}ColorR`);
+    const colorG = document.getElementById(`${shaderType}ColorG`);
+    const colorB = document.getElementById(`${shaderType}ColorB`);
+    const roughnessSlider = document.getElementById(`${shaderType}Roughness`);
+    const specularSlider = document.getElementById(`${shaderType}Specular`);
+    
+    if (!colorR || !colorG || !colorB || !roughnessSlider || !specularSlider) {
+      console.error(`Could not find controls for shader type: ${shaderType}`);
+      return;
+    }
+    
+    // Get current values from sliders
+    const r = parseFloat(colorR.value);
+    const g = parseFloat(colorG.value);
+    const b = parseFloat(colorB.value);
+    const roughness = parseFloat(roughnessSlider.value);
+    const specular = parseFloat(specularSlider.value);
+
+    const valuesString = `${shaderType}: {
+  baseColor: [${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)}],
+  roughness: ${roughness.toFixed(3)},
+  specular: ${specular.toFixed(3)}
+}`;
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(valuesString).then(() => {
+      console.log(`Copied ${shaderType} shader values to clipboard:`);
+      console.log(valuesString);
+      alert(`Copied ${shaderType} shader values to clipboard!`);
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      // Fallback: log to console
+      console.log(`\n${shaderType} shader values:\n${valuesString}`);
+      prompt('Copy these values:', valuesString);
+    });
+  }
+
+  // Wire up copy buttons
+  const copyBaseBtn = document.getElementById('copyBaseShaderBtn');
+  const copyArtistsBtn = document.getElementById('copyArtistsShaderBtn');
+  const copyStageBtn = document.getElementById('copyStageShaderBtn');
+  const copyPillarsBtn = document.getElementById('copyPillarsShaderBtn');
+  const copyFloorBtn = document.getElementById('copyFloorShaderBtn');
+
+  if (copyBaseBtn) {
+    copyBaseBtn.addEventListener('click', () => copyShaderValues('base'));
+  }
+  if (copyArtistsBtn) {
+    copyArtistsBtn.addEventListener('click', () => copyShaderValues('artists'));
+  }
+  if (copyStageBtn) {
+    copyStageBtn.addEventListener('click', () => copyShaderValues('stage'));
+  }
+  if (copyPillarsBtn) {
+    copyPillarsBtn.addEventListener('click', () => copyShaderValues('pillars'));
+  }
+  if (copyFloorBtn) {
+    copyFloorBtn.addEventListener('click', () => copyShaderValues('floor'));
+  }
+
+  // Copy all shader values function
+  function copyAllShaderValues() {
+    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor'];
+    const allValues = {};
+    
+    shaderTypes.forEach(shaderType => {
+      const colorR = document.getElementById(`${shaderType}ColorR`);
+      const colorG = document.getElementById(`${shaderType}ColorG`);
+      const colorB = document.getElementById(`${shaderType}ColorB`);
+      const roughnessSlider = document.getElementById(`${shaderType}Roughness`);
+      const specularSlider = document.getElementById(`${shaderType}Specular`);
+      
+      if (colorR && colorG && colorB && roughnessSlider && specularSlider) {
+        const r = parseFloat(colorR.value);
+        const g = parseFloat(colorG.value);
+        const b = parseFloat(colorB.value);
+        const roughness = parseFloat(roughnessSlider.value);
+        const specular = parseFloat(specularSlider.value);
+        
+        allValues[shaderType] = {
+          baseColor: [r.toFixed(3), g.toFixed(3), b.toFixed(3)],
+          roughness: roughness.toFixed(3),
+          specular: specular.toFixed(3)
+        };
+      }
+    });
+    
+    // Format as a JavaScript object
+    let valuesString = '';
+    Object.keys(allValues).forEach(shaderType => {
+      const values = allValues[shaderType];
+      valuesString += `${shaderType}: {\n  baseColor: [${values.baseColor.join(', ')}],\n  roughness: ${values.roughness},\n  specular: ${values.specular}\n}`;
+      if (shaderType !== Object.keys(allValues)[Object.keys(allValues).length - 1]) {
+        valuesString += ',\n\n';
+      }
+    });
+    
+    const fullString = valuesString;
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(fullString).then(() => {
+      console.log('Copied all shader values to clipboard:');
+      console.log(fullString);
+      alert('Copied all shader values to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      // Fallback: log to console
+      console.log('\nAll shader values:\n' + fullString);
+      prompt('Copy these values:', fullString);
+    });
+  }
+
+  // Wire up copy all button
+  const copyAllShadersBtn = document.getElementById('copyAllShadersBtn');
+  if (copyAllShadersBtn) {
+    copyAllShadersBtn.addEventListener('click', copyAllShaderValues);
+  }
+  
+  // Sync all controls to match current shader material values after setup
+  Object.keys(shaderMaterials).forEach(shaderType => {
+    const material = shaderMaterials[shaderType];
+    if (material && material.uniforms) {
+      syncControlsToShaderValues(shaderType, material);
+    }
+  });
+}
+
+// Initialize shader controls after meshes are loaded (delay to ensure materials are ready)
+setTimeout(() => {
+  initShaderControls();
+}, 2000);
 
 // NDI streams list
 const refreshNdiBtn = document.getElementById('refreshNdiBtn');
@@ -432,6 +1289,43 @@ sourceTypeSelect.addEventListener('change', (e) => {
     discoverNDIStreams();
   }
 });
+
+// Mapping type dropdown change handler
+const mappingTypeSelect = document.getElementById('mappingTypeSelect');
+if (mappingTypeSelect) {
+  mappingTypeSelect.addEventListener('change', (e) => {
+    const selectedType = e.target.value;
+    currentMappingType = selectedType;
+    
+    // Swap LED meshes
+    loadLEDMeshes(selectedType);
+    
+    // Hide front screen by default for Festival Mapping, show for Front Projection types
+    setTimeout(() => {
+      const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+      if (selectedType === 'festival') {
+        // Hide front screen for Festival Mapping
+        if (ledFrontMesh) {
+          ledFrontMesh.visible = false;
+        }
+        if (hideLedFrontCheckbox) {
+          hideLedFrontCheckbox.checked = true;
+        }
+      } else if (selectedType === 'frontProjection' || selectedType === 'frontProjectionPerspective') {
+        // Show front screen for Front Projection types
+        if (ledFrontMesh) {
+          ledFrontMesh.visible = true;
+        }
+        if (hideLedFrontCheckbox) {
+          hideLedFrontCheckbox.checked = false;
+        }
+      }
+      
+      // Update LED shaders with current texture after loading
+      updateLEDShaders();
+    }, 100);
+  });
+}
 
 // Function to fetch and display available NDI streams
 async function discoverNDIStreams() {
@@ -710,6 +1604,7 @@ const frameInfo = document.getElementById('frameInfo');
 const timelineContainer = document.getElementById('timelineContainer');
 const timelineSlider = document.getElementById('timelineSlider');
 let currentVideoElement = null;
+let currentVideoPath = null; // Store current video path/filename
 let videoFrameRate = 30; // Default frame rate, will be updated if available
 let isSeeking = false;
 
@@ -767,10 +1662,72 @@ overlaySizeSlider.addEventListener('input', (e) => {
   overlaySizeValue.textContent = value.toFixed(1);
 });
 
+// Function to extract filename from path
+function getFileName(path) {
+  if (!path) return '';
+  // Handle both forward and backslashes
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
+}
+
+// Function to detect codec from video element or path
+function getVideoCodec(video, path) {
+  if (!video) return 'unknown';
+  
+  // Try to detect codec from file extension
+  if (path) {
+    const ext = path.toLowerCase().split('.').pop();
+    // MP4 typically uses H.264 or H.265
+    if (ext === 'mp4') {
+      // Try to detect from video capabilities
+      if (video.canPlayType && video.canPlayType('video/mp4; codecs="avc1.42E01E"')) {
+        return 'H.264';
+      } else if (video.canPlayType && video.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"')) {
+        return 'H.265';
+      }
+      return 'H.264'; // Default assumption for MP4
+    }
+    if (ext === 'webm') return 'VP8/VP9';
+    if (ext === 'ogg' || ext === 'ogv') return 'Theora';
+  }
+  
+  // Fallback: try to detect from video src or canPlayType
+  if (video.src) {
+    if (video.src.includes('.mp4')) {
+      return 'H.264'; // Default for MP4
+    }
+  }
+  
+  return 'unknown';
+}
+
 // Function to update frame info display
 function updateFrameInfo(video) {
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const totalTimeDisplay = document.getElementById('totalTimeDisplay');
+  
+  // Helper function to format time as mm:ss
+  const formatTime = (timeInSeconds) => {
+    const minutes = Math.floor(timeInSeconds / 60);
+    const seconds = Math.floor(timeInSeconds % 60);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+  
+  // Extract filename and codec
+  const fileName = getFileName(currentVideoPath);
+  const codec = getVideoCodec(video, currentVideoPath);
+  
   if (!video || !isFinite(video.duration) || video.duration === 0) {
-    frameInfo.textContent = 'Frame: 0 / 0';
+    if (frameInfo) {
+      const frameText = frameInfo.querySelector('span:nth-child(3)');
+      if (frameText) frameText.textContent = 'Frame: 0 / 0';
+    }
+    if (fileNameDisplay) {
+      fileNameDisplay.textContent = fileName ? `${fileName} (${videoFrameRate} fps, ${codec})` : '';
+    }
+    if (timeDisplay) timeDisplay.textContent = '00:00';
+    if (totalTimeDisplay) totalTimeDisplay.textContent = '00:00';
     return;
   }
   
@@ -779,7 +1736,27 @@ function updateFrameInfo(video) {
   const currentFrame = Math.floor(currentTime * videoFrameRate);
   const totalFrames = Math.floor(duration * videoFrameRate);
   
-  frameInfo.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
+  // Update filename display with codec info
+  if (fileNameDisplay) {
+    fileNameDisplay.textContent = `${fileName} (${videoFrameRate} fps, ${codec})`;
+  }
+  
+  // Update frame counter
+  if (frameInfo) {
+    // Find the span that contains "Frame:" (third span, after fileNameDisplay and separator)
+    const frameText = frameInfo.querySelector('span:nth-child(3)');
+    if (frameText) frameText.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
+  }
+  
+  // Update current time display (format as mm:ss)
+  if (timeDisplay) {
+    timeDisplay.textContent = formatTime(currentTime);
+  }
+  
+  // Update total time display (format as mm:ss)
+  if (totalTimeDisplay) {
+    totalTimeDisplay.textContent = formatTime(duration);
+  }
   
   // Update timeline slider (only if not currently seeking)
   if (!isSeeking && duration > 0) {
@@ -814,6 +1791,131 @@ timelineSlider.addEventListener('input', () => {
   }
 });
 
+// Background color controls
+function updateBackgroundColor() {
+  const r = parseFloat(document.getElementById('backgroundColorR')?.value || 0.164);
+  const g = parseFloat(document.getElementById('backgroundColorG')?.value || 0.164);
+  const b = parseFloat(document.getElementById('backgroundColorB')?.value || 0.164);
+  
+  // Update scene background
+  scene.background = new THREE.Color(r, g, b);
+}
+
+// Initialize background color controls
+const backgroundColorR = document.getElementById('backgroundColorR');
+const backgroundColorG = document.getElementById('backgroundColorG');
+const backgroundColorB = document.getElementById('backgroundColorB');
+const backgroundColorPicker = document.getElementById('backgroundColorPicker');
+
+if (backgroundColorR && backgroundColorG && backgroundColorB) {
+  // RGB sliders
+  backgroundColorR.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    updateBackgroundColor();
+    const valueEl = document.getElementById('backgroundColorRValue');
+    if (valueEl) valueEl.textContent = value.toFixed(3);
+    // Update color picker
+    if (backgroundColorPicker) {
+      const g = parseFloat(backgroundColorG.value);
+      const b = parseFloat(backgroundColorB.value);
+      const hex = '#' + [value, g, b].map(x => {
+        const hex = Math.round(x * 255).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+      backgroundColorPicker.value = hex;
+    }
+  });
+
+  backgroundColorG.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    updateBackgroundColor();
+    const valueEl = document.getElementById('backgroundColorGValue');
+    if (valueEl) valueEl.textContent = value.toFixed(3);
+    // Update color picker
+    if (backgroundColorPicker) {
+      const r = parseFloat(backgroundColorR.value);
+      const b = parseFloat(backgroundColorB.value);
+      const hex = '#' + [r, value, b].map(x => {
+        const hex = Math.round(x * 255).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+      backgroundColorPicker.value = hex;
+    }
+  });
+
+  backgroundColorB.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    updateBackgroundColor();
+    const valueEl = document.getElementById('backgroundColorBValue');
+    if (valueEl) valueEl.textContent = value.toFixed(3);
+    // Update color picker
+    if (backgroundColorPicker) {
+      const r = parseFloat(backgroundColorR.value);
+      const g = parseFloat(backgroundColorG.value);
+      const hex = '#' + [r, g, value].map(x => {
+        const hex = Math.round(x * 255).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+      backgroundColorPicker.value = hex;
+    }
+  });
+
+  // Color picker
+  if (backgroundColorPicker) {
+    backgroundColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      
+      // Update RGB sliders
+      backgroundColorR.value = r;
+      backgroundColorG.value = g;
+      backgroundColorB.value = b;
+      
+      // Update value displays
+      const valueElR = document.getElementById('backgroundColorRValue');
+      const valueElG = document.getElementById('backgroundColorGValue');
+      const valueElB = document.getElementById('backgroundColorBValue');
+      if (valueElR) valueElR.textContent = r.toFixed(3);
+      if (valueElG) valueElG.textContent = g.toFixed(3);
+      if (valueElB) valueElB.textContent = b.toFixed(3);
+      
+      // Update scene background
+      updateBackgroundColor();
+    });
+  }
+}
+
+// Function to copy background color values
+function copyBackgroundColorValues() {
+  const r = parseFloat(backgroundColorR?.value || 0.164);
+  const g = parseFloat(backgroundColorG?.value || 0.164);
+  const b = parseFloat(backgroundColorB?.value || 0.164);
+  
+  const values = {
+    backgroundColor: [r.toFixed(3), g.toFixed(3), b.toFixed(3)]
+  };
+  
+  // Format as a JavaScript object
+  const valuesString = JSON.stringify(values, null, 2);
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(valuesString).then(() => {
+    console.log('Background color values copied to clipboard');
+  }).catch(err => {
+    console.error('Failed to copy background color values:', err);
+    // Fallback: show in prompt
+    prompt('Copy these values:', valuesString);
+  });
+}
+
+// Wire up copy background color button
+const copyBackgroundColorBtn = document.getElementById('copyBackgroundColorBtn');
+if (copyBackgroundColorBtn) {
+  copyBackgroundColorBtn.addEventListener('click', copyBackgroundColorValues);
+}
+
 // Checkbox to toggle mapping visibility
 const showMappingCheckbox = document.getElementById('showMapping');
 const hideLedFrontCheckbox = document.getElementById('hideLedFront');
@@ -829,11 +1931,14 @@ hideLedFrontCheckbox.addEventListener('change', (e) => {
 
 // Handle DJ deck height slider
 djDeckHeightSlider.addEventListener('input', (e) => {
-  const value = parseFloat(e.target.value);
-  djDeckHeightValue.textContent = Math.round(value);
+  const value = parseFloat(e.target.value); // Value in meters (0-12)
+  djDeckHeightValue.textContent = value.toFixed(1) + 'm';
   
-  // TODO: Connect to DJ deck object when available
-  // Example: if (djDeckObject) { djDeckObject.position.y = value; }
+  // Control the height of the DJ liftable stage mesh
+  // Convert meters to Three.js units (assuming 1 meter = 1 unit, or adjust as needed)
+  if (djLiftableMesh) {
+    djLiftableMesh.position.y = value;
+  }
 });
 
 showMappingCheckbox.addEventListener('change', (e) => {
@@ -847,121 +1952,208 @@ showMappingCheckbox.addEventListener('change', (e) => {
   }
 });
 
-// Playback controls
-const playPauseBtn = document.getElementById('playPauseBtn');
-const rewindBtn = document.getElementById('rewindBtn');
-const jumpToEndBtn = document.getElementById('jumpToEndBtn');
-const muteBtn = document.getElementById('muteBtn');
-const volumeSlider = document.getElementById('volumeSlider');
-const volumeValue = document.getElementById('volumeValue');
-const playbackMenu = document.getElementById('playbackMenu');
-
-// Function to update play/pause button icon
-function updatePlayPauseButton() {
-  if (!currentVideoElement) {
-    playPauseBtn.textContent = '▶';
-    return;
-  }
+// ============================================
+// Playback Controls
+// ============================================
+const playbackControls = {
+  // DOM Elements (will be set in init)
+  playPauseBtn: null,
+  jumpToStartBtn: null,
+  rewindBtn: null,
+  jumpToEndBtn: null,
+  muteBtn: null,
+  playbackMenu: null,
   
-  const isPaused = currentVideoElement.paused;
-  playPauseBtn.textContent = isPaused ? '▶' : '⏸';
-}
-
-playPauseBtn.addEventListener('click', () => {
-  if (currentVideoElement) {
+  // Constants
+  TIME_JUMP_AMOUNT: 10, // Jump amount in seconds
+  
+  // Icons
+  icons: {
+    play: '<span class="material-icons">play_arrow</span>',
+    pause: '<span class="material-icons">pause</span>',
+    rewind: '<span class="material-icons">replay_10</span>',
+    forward: '<span class="material-icons">forward_10</span>',
+    unmuted: '<span class="material-icons">volume_up</span>',
+    muted: '<span class="material-icons">volume_off</span>'
+  },
+  
+  // Update play/pause button icon
+  updatePlayPauseIcon() {
+    if (!this.playPauseBtn) return;
+    if (!currentVideoElement) {
+      this.playPauseBtn.innerHTML = this.icons.play;
+      return;
+    }
+    this.playPauseBtn.innerHTML = currentVideoElement.paused ? this.icons.play : this.icons.pause;
+  },
+  
+  // Update mute button icon
+  updateMuteIcon() {
+    if (!this.muteBtn) return;
+    if (!currentVideoElement) {
+      this.muteBtn.innerHTML = this.icons.unmuted;
+      return;
+    }
+    this.muteBtn.innerHTML = currentVideoElement.muted ? this.icons.muted : this.icons.unmuted;
+  },
+  
+  // Toggle play/pause
+  togglePlayPause() {
+    if (!currentVideoElement) return;
+    
     if (currentVideoElement.paused) {
-      currentVideoElement.play().catch(err => {
-        console.error('Error playing video:', err);
-      });
-      overlayVideo.play().catch(err => {
-        console.error('Error playing overlay video:', err);
-      });
+      currentVideoElement.play().catch(err => console.error('Error playing video:', err));
+      overlayVideo.play().catch(err => console.error('Error playing overlay video:', err));
     } else {
       currentVideoElement.pause();
       overlayVideo.pause();
     }
-    updatePlayPauseButton();
-  }
-});
-
-rewindBtn.addEventListener('click', () => {
-  if (currentVideoElement && videoFrameRate > 0) {
-    // Jump backward by 100 frames
-    const frameOffset = -100;
-    const timeOffset = frameOffset / videoFrameRate;
-    const newTime = Math.max(0, currentVideoElement.currentTime + timeOffset);
+    this.updatePlayPauseIcon();
+  },
+  
+  // Jump to beginning
+  jumpToStart() {
+    if (!currentVideoElement) return;
+    
+    currentVideoElement.currentTime = 0;
+    overlayVideo.currentTime = 0;
+    updateFrameInfo(currentVideoElement);
+  },
+  
+  // Jump by seconds (positive for forward, negative for backward)
+  jumpSeconds(seconds) {
+    if (!currentVideoElement) return;
+    
+    const newTime = Math.max(0, Math.min(
+      currentVideoElement.duration || Infinity,
+      currentVideoElement.currentTime + seconds
+    ));
+    
     currentVideoElement.currentTime = newTime;
     overlayVideo.currentTime = newTime;
     updateFrameInfo(currentVideoElement);
-  }
-});
-
-jumpToEndBtn.addEventListener('click', () => {
-  if (currentVideoElement && isFinite(currentVideoElement.duration) && videoFrameRate > 0) {
-    // Jump forward by 100 frames
-    const frameOffset = 100;
-    const timeOffset = frameOffset / videoFrameRate;
-    const maxTime = currentVideoElement.duration;
-    const newTime = Math.min(maxTime, currentVideoElement.currentTime + timeOffset);
-    currentVideoElement.currentTime = newTime;
-    overlayVideo.currentTime = newTime;
-    updateFrameInfo(currentVideoElement);
-  }
-});
-
-// Mute button functionality
-muteBtn.addEventListener('click', () => {
-  if (currentVideoElement) {
+  },
+  
+  // Jump by frames (kept for backwards compatibility, converts to seconds)
+  jumpFrames(frames) {
+    if (!currentVideoElement || videoFrameRate <= 0) return;
+    const timeOffset = frames / videoFrameRate;
+    this.jumpSeconds(timeOffset);
+  },
+  
+  // Toggle mute
+  toggleMute() {
+    if (!currentVideoElement) return;
     currentVideoElement.muted = !currentVideoElement.muted;
-    updateMuteButton();
+    this.updateMuteIcon();
+  },
+  
+  // Enable/disable all controls
+  setEnabled(enabled) {
+    if (!this.playPauseBtn || !this.jumpToStartBtn || !this.rewindBtn || !this.jumpToEndBtn || !this.muteBtn) {
+      return;
+    }
+    
+    this.playPauseBtn.disabled = !enabled;
+    this.jumpToStartBtn.disabled = !enabled;
+    this.rewindBtn.disabled = !enabled;
+    this.jumpToEndBtn.disabled = !enabled;
+    this.muteBtn.disabled = !enabled;
+    
+    if (enabled && currentVideoElement) {
+      this.updatePlayPauseIcon();
+      this.updateMuteIcon();
+      // Set volume to 100% when video is enabled
+      currentVideoElement.volume = 1.0;
+    }
+  },
+  
+  // Initialize event listeners
+  init() {
+    // Get DOM elements
+    this.playPauseBtn = document.getElementById('playPauseBtn');
+    this.jumpToStartBtn = document.getElementById('jumpToStartBtn');
+    this.rewindBtn = document.getElementById('rewindBtn');
+    this.jumpToEndBtn = document.getElementById('jumpToEndBtn');
+    this.muteBtn = document.getElementById('muteBtn');
+    this.playbackMenu = document.getElementById('playbackMenu');
+    
+    // Check if elements exist
+    if (!this.playPauseBtn || !this.jumpToStartBtn || !this.rewindBtn || !this.jumpToEndBtn || !this.muteBtn) {
+      console.error('Playback control elements not found', {
+        playPauseBtn: !!this.playPauseBtn,
+        jumpToStartBtn: !!this.jumpToStartBtn,
+        rewindBtn: !!this.rewindBtn,
+        jumpToEndBtn: !!this.jumpToEndBtn,
+        muteBtn: !!this.muteBtn
+      });
+      return;
+    }
+    
+    // Bind event listeners with proper context
+    this.playPauseBtn.addEventListener('click', (e) => {
+      console.log('Play/Pause button clicked');
+      this.togglePlayPause();
+    }, true); // Use capture phase
+    
+    this.jumpToStartBtn.addEventListener('click', (e) => {
+      console.log('Jump to start button clicked');
+      this.jumpToStart();
+    }, true);
+    
+    this.rewindBtn.addEventListener('click', (e) => {
+      console.log('Rewind button clicked');
+      this.jumpSeconds(-this.TIME_JUMP_AMOUNT);
+    }, true);
+    
+    this.jumpToEndBtn.addEventListener('click', (e) => {
+      console.log('Forward button clicked');
+      this.jumpSeconds(this.TIME_JUMP_AMOUNT);
+    }, true);
+    
+    this.muteBtn.addEventListener('click', (e) => {
+      console.log('Mute button clicked');
+      this.toggleMute();
+    }, true);
+    
+    // Ensure buttons are clickable
+    this.playPauseBtn.style.pointerEvents = 'auto';
+    this.jumpToStartBtn.style.pointerEvents = 'auto';
+    this.rewindBtn.style.pointerEvents = 'auto';
+    this.jumpToEndBtn.style.pointerEvents = 'auto';
+    this.muteBtn.style.pointerEvents = 'auto';
+    
+    // Make sure buttons aren't disabled unless needed
+    if (!this.playPauseBtn.disabled) {
+      console.log('Playback controls initialized successfully');
+    }
+    
+    // Initialize state
+    this.setEnabled(!!currentVideoElement);
   }
-});
+};
 
-// Function to update mute button icon
-function updateMuteButton() {
-  if (!currentVideoElement) {
-    muteBtn.textContent = '🔊';
-    return;
-  }
-  muteBtn.textContent = currentVideoElement.muted ? '🔇' : '🔊';
+// Initialize playback controls when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    playbackControls.init();
+  });
+} else {
+  playbackControls.init();
 }
 
-// Volume slider functionality
-volumeSlider.addEventListener('input', (e) => {
-  const volume = parseFloat(e.target.value) / 100; // Convert 0-100 to 0-1
-  if (currentVideoElement) {
-    currentVideoElement.volume = volume;
-    // If volume is set above 0, unmute the video
-    if (volume > 0 && currentVideoElement.muted) {
-      currentVideoElement.muted = false;
-      updateMuteButton();
-    }
-    // If volume is set to 0, mute the video
-    if (volume === 0 && !currentVideoElement.muted) {
-      currentVideoElement.muted = true;
-      updateMuteButton();
-    }
-  }
-  volumeValue.textContent = Math.round(e.target.value);
-});
-
-// Update button states based on video availability
+// Update button states based on video availability (wrapper for compatibility)
 function updatePlaybackButtons() {
-  const hasVideo = currentVideoElement !== null;
-  playPauseBtn.disabled = !hasVideo;
-  rewindBtn.disabled = !hasVideo;
-  jumpToEndBtn.disabled = !hasVideo;
-  muteBtn.disabled = !hasVideo;
-  volumeSlider.disabled = !hasVideo;
-  updatePlayPauseButton();
-  updateMuteButton();
-  
-  // Sync volume slider with video volume when video is loaded
-  if (hasVideo && currentVideoElement) {
-    const volumePercent = Math.round(currentVideoElement.volume * 100);
-    volumeSlider.value = volumePercent;
-    volumeValue.textContent = volumePercent;
-  }
+  playbackControls.setEnabled(currentVideoElement !== null);
+}
+
+// Wrapper functions for backwards compatibility
+function updatePlayPauseButton() {
+  playbackControls.updatePlayPauseIcon();
+}
+
+function updateMuteButton() {
+  playbackControls.updateMuteIcon();
 }
 
 // Initialize button states
@@ -1026,8 +2218,10 @@ function loadNDIStream(streamName) {
   }
   
   // Update status
-  textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
-  textureStatus.classList.remove('loaded');
+    if (textureStatus) {
+      textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
+      textureStatus.classList.remove('loaded');
+    }
   
   console.log('Loading NDI stream via WebSocket:', streamName);
   
@@ -1058,7 +2252,11 @@ function loadNDIStream(streamName) {
       type: 'connect',
       streamName: streamName
     }));
-    textureStatus.textContent = `Connected to ${streamName}, receiving frames...`;
+    if (textureStatus) {
+      if (textureStatus) {
+        textureStatus.textContent = `Connected to ${streamName}, receiving frames...`;
+      }
+    }
   };
   
   ndiWebSocket.onmessage = (event) => {
@@ -1088,11 +2286,11 @@ function loadNDIStream(streamName) {
           }
           
           // Update status on first frame
-          if (!textureStatus.classList.contains('loaded')) {
+          if (textureStatus && !textureStatus.classList.contains('loaded')) {
             textureStatus.textContent = `Loaded NDI Stream: ${streamName}`;
             textureStatus.classList.add('loaded');
-            updatePlaybackButtons();
           }
+          updatePlaybackButtons();
         };
         img.onerror = (err) => {
           console.error('Error loading frame image:', err);
@@ -1101,8 +2299,12 @@ function loadNDIStream(streamName) {
         
       } else if (data.type === 'error') {
         console.error('WebSocket error:', data.message);
-        textureStatus.textContent = `Error: ${data.message}`;
-        textureStatus.classList.remove('loaded');
+        if (textureStatus) {
+          if (textureStatus) {
+            textureStatus.textContent = `Error: ${data.message}`;
+            textureStatus.classList.remove('loaded');
+          }
+        }
         
         if (data.instructions && Array.isArray(data.instructions)) {
           console.log('Instructions:', data.instructions);
@@ -1115,8 +2317,12 @@ function loadNDIStream(streamName) {
   
   ndiWebSocket.onerror = (error) => {
     console.error('WebSocket error:', error);
-    textureStatus.textContent = 'Error: WebSocket connection failed';
-    textureStatus.classList.remove('loaded');
+    if (textureStatus) {
+      if (textureStatus) {
+        textureStatus.textContent = 'Error: WebSocket connection failed';
+        textureStatus.classList.remove('loaded');
+      }
+    }
   };
   
   ndiWebSocket.onclose = () => {
@@ -1145,6 +2351,9 @@ if (videoAssetSelect) {
 
 // Function to load video from path
 function loadVideoFromPath(videoPath) {
+  // Store current video path
+  currentVideoPath = videoPath;
+  
   // Clean up previous video element if it exists
   if (currentVideoElement) {
     currentVideoElement.pause();
@@ -1188,6 +2397,19 @@ function loadVideoFromPath(videoPath) {
   video.volume = 1.0; // Set volume to 100%
   video.playsInline = true;
   
+  // Adjust mapping overlay to match video aspect ratio as soon as metadata is available
+  // Add listener immediately (before loadeddata) to catch the event
+  const handleVideoMetadata = () => {
+    if (video.videoWidth && video.videoHeight) {
+      adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+    }
+  };
+  video.addEventListener('loadedmetadata', handleVideoMetadata);
+  // If metadata is already loaded, call immediately
+  if (video.readyState >= 1 && video.videoWidth && video.videoHeight) {
+    adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+  }
+  
   video.addEventListener('loadeddata', () => {
     // Create video texture
     const videoTexture = new THREE.VideoTexture(video);
@@ -1216,19 +2438,17 @@ function loadVideoFromPath(videoPath) {
     overlayVideo.style.display = 'block';
     overlayImage.style.display = 'none';
     
-    // Adjust mapping overlay to match video aspect ratio
-    // Use the main video element dimensions for more accurate aspect ratio
-    video.addEventListener('loadedmetadata', () => {
-      if (video.videoWidth && video.videoHeight) {
-        adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
-      }
-    });
-    // Also listen to overlayVideo as fallback
-    overlayVideo.addEventListener('loadedmetadata', () => {
+    // Also listen to overlayVideo as fallback for aspect ratio
+    const handleOverlayMetadata = () => {
       if (overlayVideo.videoWidth && overlayVideo.videoHeight && (!video.videoWidth || !video.videoHeight)) {
         adjustMappingAspectRatio(overlayVideo.videoWidth, overlayVideo.videoHeight);
       }
-    });
+    };
+    overlayVideo.addEventListener('loadedmetadata', handleOverlayMetadata);
+    // If overlay metadata is already loaded, call immediately
+    if (overlayVideo.readyState >= 1 && overlayVideo.videoWidth && overlayVideo.videoHeight && (!video.videoWidth || !video.videoHeight)) {
+      adjustMappingAspectRatio(overlayVideo.videoWidth, overlayVideo.videoHeight);
+    }
     
     // Try to get frame rate from video metadata (default to 30fps)
     videoFrameRate = 30; // Default, could be improved with actual video metadata
@@ -1283,8 +2503,10 @@ function loadVideoFromPath(videoPath) {
     
     currentVideoElement = video;
     const fileName = videoPath.split('\\').pop() || videoPath.split('/').pop();
-    textureStatus.textContent = `Loaded Video: ${fileName}`;
-    textureStatus.classList.add('loaded');
+    if (textureStatus) {
+      textureStatus.textContent = fileName;
+      textureStatus.classList.add('loaded');
+    }
     
     // Update video asset dropdown to show current selection
     if (videoAssetSelect && videoPath.startsWith('/assets/videos/')) {
@@ -1296,8 +2518,10 @@ function loadVideoFromPath(videoPath) {
   });
   
   video.addEventListener('error', (error) => {
-    textureStatus.textContent = 'Error loading video (check file path)';
-    textureStatus.classList.remove('loaded');
+    if (textureStatus) {
+      textureStatus.textContent = 'Error loading video (check file path)';
+      textureStatus.classList.remove('loaded');
+    }
     console.error('Error loading video:', error);
   });
   
@@ -1308,6 +2532,9 @@ function loadVideoFromPath(videoPath) {
 textureInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  
+  // Store current video path (filename for uploaded files)
+  currentVideoPath = file.name;
   
   // Reset video asset dropdown when file is selected
   if (videoAssetSelect) {
@@ -1438,13 +2665,17 @@ textureInput.addEventListener('change', (e) => {
         }
         
         updatePlaybackButtons(); // Enable playback controls
-        textureStatus.textContent = `Loaded Video: ${file.name}`;
-        textureStatus.classList.add('loaded');
+        if (textureStatus) {
+          textureStatus.textContent = file.name;
+          textureStatus.classList.add('loaded');
+        }
       });
       
       video.addEventListener('error', (error) => {
-        textureStatus.textContent = 'Error loading video';
-        textureStatus.classList.remove('loaded');
+        if (textureStatus) {
+          textureStatus.textContent = 'Error loading video';
+          textureStatus.classList.remove('loaded');
+        }
         console.error('Error loading video:', error);
       });
       
@@ -1453,8 +2684,12 @@ textureInput.addEventListener('change', (e) => {
     };
 
     reader.onerror = () => {
-      textureStatus.textContent = 'Error reading file';
-      textureStatus.classList.remove('loaded');
+      if (textureStatus) {
+        if (textureStatus) {
+          textureStatus.textContent = 'Error reading file';
+          textureStatus.classList.remove('loaded');
+        }
+      }
     };
 
     reader.readAsDataURL(file);
@@ -1463,8 +2698,10 @@ textureInput.addEventListener('change', (e) => {
 
   // Handle image files
   if (!file.type.startsWith('image/')) {
-    textureStatus.textContent = 'Error: Please select an image or video file';
-    textureStatus.classList.remove('loaded');
+    if (textureStatus) {
+      textureStatus.textContent = 'Error: Please select an image or video file';
+      textureStatus.classList.remove('loaded');
+    }
     return;
   }
 
@@ -1524,23 +2761,29 @@ textureInput.addEventListener('change', (e) => {
         // Disable playback buttons for images
         updatePlaybackButtons();
         
-        textureStatus.textContent = `Loaded: ${file.name}`;
-        textureStatus.classList.add('loaded');
+        if (textureStatus) {
+          textureStatus.textContent = `Loaded: ${file.name}`;
+          textureStatus.classList.add('loaded');
+        }
       },
       // onProgress callback (optional)
       undefined,
       // onError callback
       (error) => {
-        textureStatus.textContent = 'Error loading texture';
-        textureStatus.classList.remove('loaded');
+        if (textureStatus) {
+          textureStatus.textContent = 'Error loading texture';
+          textureStatus.classList.remove('loaded');
+        }
         console.error('Error loading texture:', error);
       }
     );
   };
 
   reader.onerror = () => {
-    textureStatus.textContent = 'Error reading file';
-    textureStatus.classList.remove('loaded');
+    if (textureStatus) {
+      textureStatus.textContent = 'Error reading file';
+      textureStatus.classList.remove('loaded');
+    }
   };
 
   reader.readAsDataURL(file);
@@ -1822,6 +3065,22 @@ function animate() {
   // Update controls
   controls.update();
   
+  // Update camera position in all shader materials
+  Object.values(shaderMaterials).forEach(shaderMaterial => {
+    if (shaderMaterial.uniforms && shaderMaterial.uniforms.uCameraPosition) {
+      shaderMaterial.uniforms.uCameraPosition.value.copy(camera.position);
+    }
+  });
+  
+  // Update camera position in all cloned materials
+  Object.values(materialReferences).forEach(materialArray => {
+    materialArray.forEach(material => {
+      if (material.uniforms && material.uniforms.uCameraPosition) {
+        material.uniforms.uCameraPosition.value.copy(camera.position);
+      }
+    });
+  });
+  
   // Update video texture if it exists (VideoTexture auto-updates, but ensure it's marked)
   if (material.uniforms.uTexture.value) {
     const texture = material.uniforms.uTexture.value;
@@ -1858,4 +3117,5 @@ if (document.readyState === 'loading') {
   // DOM already loaded, call immediately
   loadVideoFromPath(DEFAULT_VIDEO_PATH);
 }
+
 
