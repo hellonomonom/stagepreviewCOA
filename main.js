@@ -812,7 +812,7 @@ const jumpToEndBtn = document.getElementById('jumpToEndBtn');
 const muteBtn = document.getElementById('muteBtn');
 const volumeSlider = document.getElementById('volumeSlider');
 const volumeValue = document.getElementById('volumeValue');
-const playbackControlsGroup = document.getElementById('playbackControlsGroup');
+const playbackMenu = document.getElementById('playbackMenu');
 
 // Function to update play/pause button icon
 function updatePlayPauseButton() {
@@ -827,12 +827,6 @@ function updatePlayPauseButton() {
 
 playPauseBtn.addEventListener('click', () => {
   if (currentVideoElement) {
-    // Unmute on first user interaction (browser autoplay policy)
-    if (currentVideoElement.muted && currentVideoElement.volume > 0) {
-      currentVideoElement.muted = false;
-      updateMuteButton();
-    }
-    
     if (currentVideoElement.paused) {
       currentVideoElement.play().catch(err => {
         console.error('Error playing video:', err);
@@ -849,9 +843,11 @@ playPauseBtn.addEventListener('click', () => {
 });
 
 rewindBtn.addEventListener('click', () => {
-  if (currentVideoElement) {
-    // Rewind by 5 seconds
-    const newTime = Math.max(0, currentVideoElement.currentTime - 5);
+  if (currentVideoElement && videoFrameRate > 0) {
+    // Jump backward by 100 frames
+    const frameOffset = -100;
+    const timeOffset = frameOffset / videoFrameRate;
+    const newTime = Math.max(0, currentVideoElement.currentTime + timeOffset);
     currentVideoElement.currentTime = newTime;
     overlayVideo.currentTime = newTime;
     updateFrameInfo(currentVideoElement);
@@ -859,9 +855,14 @@ rewindBtn.addEventListener('click', () => {
 });
 
 jumpToEndBtn.addEventListener('click', () => {
-  if (currentVideoElement && isFinite(currentVideoElement.duration)) {
-    currentVideoElement.currentTime = currentVideoElement.duration;
-    overlayVideo.currentTime = overlayVideo.duration || currentVideoElement.duration;
+  if (currentVideoElement && isFinite(currentVideoElement.duration) && videoFrameRate > 0) {
+    // Jump forward by 100 frames
+    const frameOffset = 100;
+    const timeOffset = frameOffset / videoFrameRate;
+    const maxTime = currentVideoElement.duration;
+    const newTime = Math.min(maxTime, currentVideoElement.currentTime + timeOffset);
+    currentVideoElement.currentTime = newTime;
+    overlayVideo.currentTime = newTime;
     updateFrameInfo(currentVideoElement);
   }
 });
@@ -976,6 +977,11 @@ function loadNDIStream(streamName) {
   timelineContainer.classList.remove('active');
   overlayVideo.src = '';
   overlayImage.src = '';
+  
+  // Hide playback menu until stream is loaded
+  if (playbackMenu) {
+    playbackMenu.style.display = 'none';
+  }
   
   // Update status
   textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
@@ -1112,6 +1118,11 @@ function loadVideoFromPath(videoPath) {
   timelineContainer.classList.remove('active');
   overlayVideo.src = '';
   overlayImage.src = '';
+  
+  // Hide playback menu until video is loaded
+  if (playbackMenu) {
+    playbackMenu.style.display = 'none';
+  }
 
   // Determine video URL
   let videoUrl;
@@ -1200,9 +1211,9 @@ function loadVideoFromPath(videoPath) {
     frameInfo.classList.add('active');
     timelineContainer.classList.add('active');
     
-    // Show playback controls for videos
-    if (playbackControlsGroup) {
-      playbackControlsGroup.style.display = 'block';
+    // Show playback menu for videos
+    if (playbackMenu) {
+      playbackMenu.style.display = 'block';
     }
     // Initialize timeline max value
     if (isFinite(video.duration) && video.duration > 0) {
@@ -1458,9 +1469,9 @@ textureInput.addEventListener('change', (e) => {
         frameInfo.classList.remove('active');
         timelineContainer.classList.remove('active');
         
-        // Hide playback controls for images
-        if (playbackControlsGroup) {
-          playbackControlsGroup.style.display = 'none';
+        // Hide playback menu for images
+        if (playbackMenu) {
+          playbackMenu.style.display = 'none';
         }
         
         // Show mapping overlay if checkbox is checked

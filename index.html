@@ -11,12 +11,12 @@
         <div class="control-group">
             <div class="checkbox-wrapper">
                 <input type="checkbox" id="showMapping">
-                <label for="showMapping">Show Mapping</label>
+                <label for="showMapping" class="label-inline">Show Mapping</label>
             </div>
         </div>
         <div class="control-group">
-            <label for="overlaySizeSlider">
-                Overlay Size: <span class="slider-value" id="overlaySizeValue">1.0</span>
+            <label for="overlaySizeSlider" class="label">
+                Overlay Size: <span class="value" id="overlaySizeValue">1.0</span>
             </label>
             <input 
                 type="range" 
@@ -29,23 +29,23 @@
             />
         </div>
         <div class="control-group">
-            <label>Source Type</label>
-            <select id="sourceTypeSelect" class="ndi-select">
+            <label class="label">Source Type</label>
+            <select id="sourceTypeSelect" class="dropdown">
                 <option value="texture">Image/Video</option>
                 <option value="ndi">Start NDI Stream</option>
             </select>
         </div>
         <div class="control-group" id="textureInputGroup">
-            <label>Texture</label>
-            <label for="videoAssetSelect" style="margin-bottom: var(--spacing-sm);">Video Assets</label>
-            <select id="videoAssetSelect" class="ndi-select">
+            <label class="label">Texture</label>
+            <label for="videoAssetSelect" class="label">Video Assets</label>
+            <select id="videoAssetSelect" class="dropdown">
                 <option value="">Select a video...</option>
                 <option value="/assets/videos/ANYMA_DunDun.mp4">ANYMA_DunDun.mp4</option>
                 <option value="/assets/videos/ANYMA_HumanNow.mp4">ANYMA_HumanNow.mp4</option>
                 <option value="/assets/videos/dundun.mp4">dundun.mp4</option>
                 <option value="/assets/videos/shG010_Eva_v12.mp4">shG010_Eva_v12.mp4</option>
             </select>
-            <div class="file-input-wrapper" style="margin-top: var(--spacing-md);">
+            <div class="file-input-wrapper mt-md">
                 <input 
                     type="file" 
                     id="textureInput" 
@@ -56,54 +56,19 @@
                     Load Image / Video
                 </label>
             </div>
-            <div class="texture-status" id="textureStatus">No texture loaded</div>
+            <div class="status" id="textureStatus">No texture loaded</div>
         </div>
-        <div class="control-group" id="ndiStreamGroup" style="display: none;">
-            <label>Available NDI Streams</label>
-            <button class="file-input-label" id="refreshNdiBtn" style="margin-bottom: 10px;">
+        <div class="control-group hidden" id="ndiStreamGroup">
+            <label class="label">Available NDI Streams</label>
+            <button class="btn btn-full mb-md" id="refreshNdiBtn">
                 Refresh NDI Streams
             </button>
-            <select id="ndiStreamSelect" class="ndi-select">
+            <select id="ndiStreamSelect" class="dropdown">
                 <option value="">No streams discovered yet. Click "Refresh NDI Streams" to discover.</option>
             </select>
         </div>
-        <div class="control-group" id="playbackControlsGroup">
-            <label>Playback Controls</label>
-            <div class="playback-controls">
-                <button class="playback-btn" id="rewindBtn" aria-label="Rewind">⏪</button>
-                <button class="playback-btn" id="playPauseBtn" aria-label="Play/Pause">▶</button>
-                <button class="playback-btn" id="jumpToEndBtn" aria-label="Jump to end">⏩</button>
-                <button class="playback-btn" id="muteBtn" aria-label="Mute/Unmute">🔊</button>
-            </div>
-            <label for="volumeSlider" style="margin-top: 10px;">
-                Volume: <span class="slider-value" id="volumeValue">100</span>%
-            </label>
-            <input 
-                type="range" 
-                id="volumeSlider" 
-                class="slider" 
-                min="0" 
-                max="100" 
-                step="1" 
-                value="100"
-            />
-        </div>
         <div class="control-group">
-            <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
-            <div class="timeline-container" id="timelineContainer">
-                <input 
-                    type="range" 
-                    id="timelineSlider" 
-                    class="timeline-slider" 
-                    min="0" 
-                    max="100" 
-                    step="0.1" 
-                    value="0"
-                />
-            </div>
-        </div>
-        <div class="control-group">
-            <label>Camera Positions</label>
+            <label class="label">Camera Positions</label>
             <div class="camera-position-buttons">
                 <button class="camera-position-btn" id="cameraPos1">Position 1</button>
                 <button class="camera-position-btn" id="cameraPos2">Position 2</button>
@@ -112,13 +77,13 @@
             </div>
         </div>
         <div class="control-group">
-            <label>Stage Modification</label>
+            <label class="label">Stage Modification</label>
             <div class="checkbox-wrapper">
                 <input type="checkbox" id="hideLedFront">
                 <label for="hideLedFront">Hide LED Front</label>
             </div>
-            <label for="djDeckHeightSlider">
-                Height DJ Deck: <span class="slider-value" id="djDeckHeightValue">0</span>
+            <label for="djDeckHeightSlider" class="label">
+                Height DJ Deck: <span class="value" id="djDeckHeightValue">0</span>
             </label>
             <input 
                 type="range" 
@@ -131,6 +96,52 @@
             />
         </div>
     </div>
+    <!-- Playback Menu -->
+    <div class="playback-menu" id="playbackMenu">
+        <div class="playback-menu-content">
+            <!-- Frame Info -->
+            <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
+            
+            <!-- Timeline Slider -->
+            <div class="timeline-container" id="timelineContainer">
+                <input 
+                    type="range" 
+                    id="timelineSlider" 
+                    class="slider slider-timeline" 
+                    min="0" 
+                    max="100" 
+                    step="0.1" 
+                    value="0"
+                />
+            </div>
+            
+            <!-- Playback Controls Row -->
+            <div class="playback-menu-controls">
+                <!-- Transport Controls -->
+                <div class="playback-transport">
+                    <button class="playback-btn" id="rewindBtn" aria-label="Jump back 100 frames">⏪</button>
+                    <button class="playback-btn playback-btn-primary" id="playPauseBtn" aria-label="Play/Pause">▶</button>
+                    <button class="playback-btn" id="jumpToEndBtn" aria-label="Jump forward 100 frames">⏩</button>
+                </div>
+                
+                <!-- Volume Control -->
+                <div class="playback-volume">
+                    <button class="playback-btn" id="muteBtn" aria-label="Mute/Unmute">🔊</button>
+                    <input 
+                        type="range" 
+                        id="volumeSlider" 
+                        class="slider slider-volume" 
+                        min="0" 
+                        max="100" 
+                        step="1" 
+                        value="100"
+                    />
+                    <span class="value value-sm" id="volumeValue">100</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="mapping-overlay" id="mapping">
         <video id="overlayVideo" muted loop playsinline></video>
         <img id="overlayImage" style="display: none;" alt="Mapping texture">
@@ -164,7 +175,7 @@
                 <button class="copy-camera-btn" id="storeCameraBtn">Store</button>
                 <button class="copy-camera-btn" id="loadCameraBtn">Load</button>
             </div>
-            <button class="copy-camera-btn" id="copyCameraBtn" style="margin-top: var(--spacing-md);">Copy Camera Values</button>
+            <button class="copy-camera-btn" id="copyCameraBtn">Copy Camera Values</button>
         </div>
     </div>
     <script type="module" src="/main.js"></script>
