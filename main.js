@@ -307,63 +307,105 @@ const textureStatus = document.getElementById('textureStatus');
 
 // Make control panel draggable
 let isDragging = false;
+let isDraggingCamera = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let panelStartX = 0;
 let panelStartY = 0;
 
-if (controlPanel) {
-  controlPanel.addEventListener('mousedown', (e) => {
+const cameraPanel = document.getElementById('cameraPanel');
+
+// Helper function to make panel draggable
+function makePanelDraggable(panel, dragStateVar) {
+  if (!panel) return;
+  
+  panel.addEventListener('mousedown', (e) => {
     // Only start dragging if clicking on the panel background or labels (not interactive elements)
     const target = e.target;
     const isInteractive = target.tagName === 'INPUT' || 
                          target.tagName === 'SELECT' || 
                          target.tagName === 'BUTTON' ||
-                         target.tagName === 'LABEL' && target.getAttribute('for');
+                         (target.tagName === 'LABEL' && target.getAttribute('for'));
     
-    if (!isInteractive && (target === controlPanel || target.closest('.control-group label'))) {
-      isDragging = true;
+    if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header'))) {
+      if (dragStateVar === 'control') {
+        isDragging = true;
+      } else {
+        isDraggingCamera = true;
+      }
       dragStartX = e.clientX;
       dragStartY = e.clientY;
       
-      const rect = controlPanel.getBoundingClientRect();
+      const rect = panel.getBoundingClientRect();
       panelStartX = rect.left;
       panelStartY = rect.top;
       
-      controlPanel.style.cursor = 'grabbing';
+      panel.style.cursor = 'grabbing';
       e.preventDefault();
     }
   });
-
-  document.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      const deltaX = e.clientX - dragStartX;
-      const deltaY = e.clientY - dragStartY;
-      
-      let newX = panelStartX + deltaX;
-      let newY = panelStartY + deltaY;
-      
-      // Keep panel within viewport bounds
-      const panelRect = controlPanel.getBoundingClientRect();
-      const maxX = window.innerWidth - panelRect.width;
-      const maxY = window.innerHeight - panelRect.height;
-      
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-      
-      controlPanel.style.left = `${newX}px`;
-      controlPanel.style.top = `${newY}px`;
-      controlPanel.style.right = 'auto';
-    }
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      controlPanel.style.cursor = 'grab';
-    }
-  });
 }
+
+// Make control panel draggable
+makePanelDraggable(controlPanel, 'control');
+
+// Make camera panel draggable
+makePanelDraggable(cameraPanel, 'camera');
+
+// Handle mouse move for both panels
+document.addEventListener('mousemove', (e) => {
+  if (isDragging && controlPanel) {
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    let newX = panelStartX + deltaX;
+    let newY = panelStartY + deltaY;
+    
+    // Keep panel within viewport bounds
+    const panelRect = controlPanel.getBoundingClientRect();
+    const maxX = window.innerWidth - panelRect.width;
+    const maxY = window.innerHeight - panelRect.height;
+    
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    
+    controlPanel.style.left = `${newX}px`;
+    controlPanel.style.top = `${newY}px`;
+    controlPanel.style.right = 'auto';
+  }
+  
+  if (isDraggingCamera && cameraPanel) {
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    let newX = panelStartX + deltaX;
+    let newY = panelStartY + deltaY;
+    
+    // Keep panel within viewport bounds
+    const panelRect = cameraPanel.getBoundingClientRect();
+    const maxX = window.innerWidth - panelRect.width;
+    const maxY = window.innerHeight - panelRect.height;
+    
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    
+    cameraPanel.style.left = `${newX}px`;
+    cameraPanel.style.top = `${newY}px`;
+    cameraPanel.style.right = 'auto';
+  }
+});
+
+// Handle mouse up for both panels
+document.addEventListener('mouseup', () => {
+  if (isDragging && controlPanel) {
+    isDragging = false;
+    controlPanel.style.cursor = 'grab';
+  }
+  if (isDraggingCamera && cameraPanel) {
+    isDraggingCamera = false;
+    cameraPanel.style.cursor = 'grab';
+  }
+});
 
 // NDI streams list
 const refreshNdiBtn = document.getElementById('refreshNdiBtn');
@@ -1515,6 +1557,7 @@ const cameraTargetX = document.getElementById('cameraTargetX');
 const cameraTargetY = document.getElementById('cameraTargetY');
 const cameraTargetZ = document.getElementById('cameraTargetZ');
 const copyCameraBtn = document.getElementById('copyCameraBtn');
+const cameraDebugPanel = document.getElementById('cameraDebugPanel');
 
 // Function to update camera debug info
 function updateCameraDebug() {
