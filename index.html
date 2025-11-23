@@ -19,6 +19,7 @@
                     <button class="tab-button active" id="mediaTabBtn" data-tab="media">Media</button>
                     <button class="tab-button" id="mappingTabBtn" data-tab="mapping">Mapping</button>
                     <button class="tab-button" id="stageTabBtn" data-tab="stage">Stage</button>
+                    <button class="tab-button" id="cameraTabBtn" data-tab="camera">Camera</button>
                     <button class="tab-button" id="devTabBtn" data-tab="dev">Dev</button>
                 </div>
                 <div class="tab-content">
@@ -70,8 +71,8 @@
                         <div class="control-group">
                             <label class="label">Mapping Type</label>
                             <select id="mappingTypeSelect" class="dropdown">
+                                <option value="frontProjectionPerspective" selected>Front Projection Perspective</option>
                                 <option value="frontProjection">Front Projection Orthogonal</option>
-                                <option value="frontProjectionPerspective">Front Projection Perspective</option>
                                 <option value="festival">Festival Mapping</option>
                             </select>
                         </div>
@@ -79,6 +80,12 @@
                             <div class="checkbox-wrapper">
                                 <input type="checkbox" id="useCorrectedMesh" />
                                 <label for="useCorrectedMesh" class="label-inline">Use corrected mesh</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="hideLedFront">
+                                <label for="hideLedFront" class="label-inline">Hide LED Front</label>
                             </div>
                         </div>
                         <div class="control-group">
@@ -106,12 +113,6 @@
                     <!-- Stage Tab Content -->
                     <div class="tab-panel" id="stageTabPanel">
                         <div class="control-group">
-                            <div class="checkbox-wrapper">
-                                <input type="checkbox" id="hideLedFront">
-                                <label for="hideLedFront">Hide LED Front</label>
-                            </div>
-                        </div>
-                        <div class="control-group">
                             <label for="djDeckHeightSlider" class="label">
                                 Height DJ: <span class="value" id="djDeckHeightValue">0.0m</span>
                             </label>
@@ -127,6 +128,51 @@
                         </div>
                     </div>
 
+                    <!-- Camera Tab Content -->
+                    <div class="tab-panel" id="cameraTabPanel">
+                        <div class="control-group">
+                            <div class="camera-position-buttons">
+                                <button class="camera-position-btn" id="cameraPos1">Position 1</button>
+                                <button class="camera-position-btn" id="cameraPos2">Position 2</button>
+                                <button class="camera-position-btn" id="cameraPos3">Position 3</button>
+                                <button class="camera-position-btn" id="cameraPos4">Position 4</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="showCameraDebugPanel">
+                                <label for="showCameraDebugPanel" class="label-inline">Show Camera Debug Panel</label>
+                            </div>
+                        </div>
+                        <div class="camera-debug-panel" id="cameraDebugPanel">
+                            <div class="debug-panel-content">
+                                <div class="debug-info-row">
+                                    <span class="debug-label-text">Position:</span>
+                                    <span class="debug-value" id="cameraPosX">0.00</span>,
+                                    <span class="debug-value" id="cameraPosY">0.00</span>,
+                                    <span class="debug-value" id="cameraPosZ">0.00</span>
+                                </div>
+                                <div class="debug-info-row">
+                                    <span class="debug-label-text">Rotation:</span>
+                                    <span class="debug-value" id="cameraRotX">0.00</span>,
+                                    <span class="debug-value" id="cameraRotY">0.00</span>,
+                                    <span class="debug-value" id="cameraRotZ">0.00</span>
+                                </div>
+                                <div class="debug-info-row">
+                                    <span class="debug-label-text">Target:</span>
+                                    <span class="debug-value" id="cameraTargetX">0.00</span>,
+                                    <span class="debug-value" id="cameraTargetY">0.00</span>,
+                                    <span class="debug-value" id="cameraTargetZ">0.00</span>
+                                </div>
+                                <div class="camera-session-buttons">
+                                    <button class="copy-camera-btn" id="storeCameraBtn">Store</button>
+                                    <button class="copy-camera-btn" id="loadCameraBtn">Load</button>
+                                </div>
+                                <button class="copy-camera-btn" id="copyCameraBtn">Copy Camera Values</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Dev Tab Content -->
                     <div class="tab-panel" id="devTabPanel">
                         <div class="control-group">
@@ -135,61 +181,20 @@
                                 <label for="showStyleShaderPanel" class="label-inline">Show Style & Shaders Panel</label>
                             </div>
                         </div>
+                        <div class="text-sm" id="versionInfo" style="font-family: var(--font-family-mono); line-height: 1.6; margin-top: var(--space-xl); word-wrap: break-word; white-space: pre-line;">-</div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Camera Panel -->
-    <div class="camera-panel" id="cameraPanel">
-        <div class="camera-panel-header">
-            <div class="control-section-header">Camera</div>
-            <button class="camera-panel-toggle" id="cameraPanelToggle" aria-label="Minimize/Maximize">−</button>
-        </div>
-        <div class="control-section-content">
-            <div class="control-group">
-                <div class="camera-position-buttons">
-                    <button class="camera-position-btn" id="cameraPos1">Position 1</button>
-                    <button class="camera-position-btn" id="cameraPos2">Position 2</button>
-                    <button class="camera-position-btn" id="cameraPos3">Position 3</button>
-                    <button class="camera-position-btn" id="cameraPos4">Position 4</button>
-                </div>
-    </div>
-    <div class="control-group">
-        <div class="checkbox-wrapper">
-            <input type="checkbox" id="showCameraDebug">
-            <label for="showCameraDebug" class="label-inline">Show Debug Info</label>
-        </div>
-    </div>
-    <div class="camera-debug-panel" id="cameraDebugPanel">
-        <div class="debug-panel-content">
-            <div class="debug-info-row">
-                <span class="debug-label-text">Position:</span>
-                <span class="debug-value" id="cameraPosX">0.00</span>,
-                <span class="debug-value" id="cameraPosY">0.00</span>,
-                <span class="debug-value" id="cameraPosZ">0.00</span>
-            </div>
-            <div class="debug-info-row">
-                <span class="debug-label-text">Rotation:</span>
-                <span class="debug-value" id="cameraRotX">0.00</span>,
-                <span class="debug-value" id="cameraRotY">0.00</span>,
-                <span class="debug-value" id="cameraRotZ">0.00</span>
-            </div>
-            <div class="debug-info-row">
-                <span class="debug-label-text">Target:</span>
-                <span class="debug-value" id="cameraTargetX">0.00</span>,
-                <span class="debug-value" id="cameraTargetY">0.00</span>,
-                <span class="debug-value" id="cameraTargetZ">0.00</span>
-            </div>
-            <div class="camera-session-buttons">
-                <button class="copy-camera-btn" id="storeCameraBtn">Store</button>
-                <button class="copy-camera-btn" id="loadCameraBtn">Load</button>
-            </div>
-                    <button class="copy-camera-btn" id="copyCameraBtn">Copy Camera Values</button>
-                </div>
-            </div>
-        </div>
+    <!-- Settings Panel Burger Menu (shows when panel is minimized) -->
+    <button class="settings-panel-burger" id="settingsPanelBurger" aria-label="Open Settings">
+        <span class="material-icons">menu</span>
+    </button>
+
+    <!-- Camera Panel (hidden - now integrated into Settings panel as a tab) -->
+    <div class="camera-panel" id="cameraPanel" style="display: none;">
     </div>
 
     <!-- Combined Style & Shader Panel -->
@@ -213,18 +218,18 @@
                             <button class="btn btn-sm" id="copyBackgroundColorBtn">Copy Values</button>
                         </div>
                         <label class="label">Background Color</label>
-                        <input type="color" id="backgroundColorPicker" value="#030303" />
+                        <input type="color" id="backgroundColorPicker" value="#010101" />
                         <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
-                            <label for="backgroundColorR" class="label" style="flex: 1;">R: <span class="value" id="backgroundColorRValue">0.012</span></label>
-                            <input type="range" id="backgroundColorR" class="slider" min="0" max="1" step="0.001" value="0.012" />
+                            <label for="backgroundColorR" class="label" style="flex: 1;">R: <span class="value" id="backgroundColorRValue">0.004</span></label>
+                            <input type="range" id="backgroundColorR" class="slider" min="0" max="1" step="0.001" value="0.004" />
                         </div>
                         <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
-                            <label for="backgroundColorG" class="label" style="flex: 1;">G: <span class="value" id="backgroundColorGValue">0.012</span></label>
-                            <input type="range" id="backgroundColorG" class="slider" min="0" max="1" step="0.001" value="0.012" />
+                            <label for="backgroundColorG" class="label" style="flex: 1;">G: <span class="value" id="backgroundColorGValue">0.004</span></label>
+                            <input type="range" id="backgroundColorG" class="slider" min="0" max="1" step="0.001" value="0.004" />
                         </div>
                         <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
-                            <label for="backgroundColorB" class="label" style="flex: 1;">B: <span class="value" id="backgroundColorBValue">0.012</span></label>
-                            <input type="range" id="backgroundColorB" class="slider" min="0" max="1" step="0.001" value="0.012" />
+                            <label for="backgroundColorB" class="label" style="flex: 1;">B: <span class="value" id="backgroundColorBValue">0.004</span></label>
+                            <input type="range" id="backgroundColorB" class="slider" min="0" max="1" step="0.001" value="0.004" />
                         </div>
                     </div>
 

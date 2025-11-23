@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0.012, 0.012, 0.012);
+scene.background = new THREE.Color(0.004, 0.004, 0.004);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -322,8 +322,8 @@ const ledMeshFiles = {
   ]
 };
 
-// Current mapping type (default to frontProjection)
-let currentMappingType = 'frontProjection';
+// Current mapping type (default to frontProjectionPerspective)
+let currentMappingType = 'frontProjectionPerspective';
 
 // Mesh file paths organized by category
 const meshFiles = {
@@ -736,10 +736,12 @@ switchTab('style');
 const mediaTabBtn = document.getElementById('mediaTabBtn');
 const mappingTabBtn = document.getElementById('mappingTabBtn');
 const stageTabBtn = document.getElementById('stageTabBtn');
+const cameraTabBtn = document.getElementById('cameraTabBtn');
 const devTabBtn = document.getElementById('devTabBtn');
 const mediaTabPanel = document.getElementById('mediaTabPanel');
 const mappingTabPanel = document.getElementById('mappingTabPanel');
 const stageTabPanel = document.getElementById('stageTabPanel');
+const cameraTabPanel = document.getElementById('cameraTabPanel');
 const devTabPanel = document.getElementById('devTabPanel');
 
 function switchSettingsTab(activeTabName) {
@@ -747,12 +749,14 @@ function switchSettingsTab(activeTabName) {
   mediaTabBtn?.classList.toggle('active', activeTabName === 'media');
   mappingTabBtn?.classList.toggle('active', activeTabName === 'mapping');
   stageTabBtn?.classList.toggle('active', activeTabName === 'stage');
+  cameraTabBtn?.classList.toggle('active', activeTabName === 'camera');
   devTabBtn?.classList.toggle('active', activeTabName === 'dev');
   
   // Update panels
   mediaTabPanel?.classList.toggle('active', activeTabName === 'media');
   mappingTabPanel?.classList.toggle('active', activeTabName === 'mapping');
   stageTabPanel?.classList.toggle('active', activeTabName === 'stage');
+  cameraTabPanel?.classList.toggle('active', activeTabName === 'camera');
   devTabPanel?.classList.toggle('active', activeTabName === 'dev');
 }
 
@@ -765,12 +769,47 @@ if (mappingTabBtn) {
 if (stageTabBtn) {
   stageTabBtn.addEventListener('click', () => switchSettingsTab('stage'));
 }
+if (cameraTabBtn) {
+  cameraTabBtn.addEventListener('click', () => switchSettingsTab('camera'));
+}
 if (devTabBtn) {
   devTabBtn.addEventListener('click', () => switchSettingsTab('dev'));
 }
 
 // Initialize with Media tab active
 switchSettingsTab('media');
+
+// Version info display
+const versionInfoEl = document.getElementById('versionInfo');
+if (versionInfoEl) {
+  // @ts-ignore - These are injected by Vite define
+  const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+  // @ts-ignore
+  const buildTime = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null;
+  // @ts-ignore
+  const gitCommit = typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'unknown';
+  
+  const lines = [`v${version}`];
+  
+  if (buildTime) {
+    const date = new Date(buildTime);
+    const formattedDate = date.toLocaleString('en-US', { 
+      month: 'numeric', 
+      day: 'numeric', 
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    lines.push(`Built: ${formattedDate}`);
+  } else {
+    lines.push('Built: development');
+  }
+  
+  lines.push(`Commit: ${gitCommit}`);
+  
+  versionInfoEl.textContent = lines.join('\n');
+}
 
 // Style-Shader panel visibility checkbox
 const showStyleShaderPanelCheckbox = document.getElementById('showStyleShaderPanel');
@@ -805,10 +844,29 @@ if (styleShaderPanelToggle && styleShaderPanel) {
 
 // Settings panel minimize toggle
 const settingsPanelToggle = document.getElementById('settingsPanelToggle');
+const settingsPanelBurger = document.getElementById('settingsPanelBurger');
 if (settingsPanelToggle && settingsPanel) {
   settingsPanelToggle.addEventListener('click', () => {
     settingsPanel.classList.toggle('minimized');
     settingsPanelToggle.textContent = settingsPanel.classList.contains('minimized') ? '+' : '−';
+    // Update burger menu visibility
+    if (settingsPanelBurger) {
+      settingsPanelBurger.style.display = settingsPanel.classList.contains('minimized') ? 'flex' : 'none';
+    }
+  });
+}
+
+// Settings panel burger menu (shows when minimized)
+if (settingsPanelBurger && settingsPanel) {
+  // Initialize burger menu as hidden
+  settingsPanelBurger.style.display = 'none';
+  
+  settingsPanelBurger.addEventListener('click', () => {
+    settingsPanel.classList.remove('minimized');
+    if (settingsPanelToggle) {
+      settingsPanelToggle.textContent = '−';
+    }
+    settingsPanelBurger.style.display = 'none';
   });
 }
 
@@ -2051,9 +2109,9 @@ timelineSlider.addEventListener('input', () => {
 
 // Background color controls
 function updateBackgroundColor() {
-  const r = parseFloat(document.getElementById('backgroundColorR')?.value || 0.164);
-  const g = parseFloat(document.getElementById('backgroundColorG')?.value || 0.164);
-  const b = parseFloat(document.getElementById('backgroundColorB')?.value || 0.164);
+  const r = parseFloat(document.getElementById('backgroundColorR')?.value || 0.004);
+  const g = parseFloat(document.getElementById('backgroundColorG')?.value || 0.004);
+  const b = parseFloat(document.getElementById('backgroundColorB')?.value || 0.004);
   
   // Update scene background
   scene.background = new THREE.Color(r, g, b);
@@ -2147,9 +2205,9 @@ if (backgroundColorR && backgroundColorG && backgroundColorB) {
 
 // Function to copy background color values
 function copyBackgroundColorValues() {
-  const r = parseFloat(backgroundColorR?.value || 0.164);
-  const g = parseFloat(backgroundColorG?.value || 0.164);
-  const b = parseFloat(backgroundColorB?.value || 0.164);
+  const r = parseFloat(backgroundColorR?.value || 0.004);
+  const g = parseFloat(backgroundColorG?.value || 0.004);
+  const b = parseFloat(backgroundColorB?.value || 0.004);
   
   const values = {
     backgroundColor: [r.toFixed(3), g.toFixed(3), b.toFixed(3)]
@@ -3065,21 +3123,21 @@ const cameraTargetY = document.getElementById('cameraTargetY');
 const cameraTargetZ = document.getElementById('cameraTargetZ');
 const copyCameraBtn = document.getElementById('copyCameraBtn');
 const cameraDebugPanel = document.getElementById('cameraDebugPanel');
-const showCameraDebugCheckbox = document.getElementById('showCameraDebug');
+const showCameraDebugPanelCheckbox = document.getElementById('showCameraDebugPanel');
 
-// Toggle debug panel visibility
-if (showCameraDebugCheckbox && cameraDebugPanel) {
-  showCameraDebugCheckbox.addEventListener('change', (e) => {
+// Camera debug panel visibility checkbox handler
+if (showCameraDebugPanelCheckbox && cameraDebugPanel) {
+  // Initialize as hidden (unchecked by default)
+  cameraDebugPanel.classList.add('hidden');
+  showCameraDebugPanelCheckbox.checked = false;
+  
+  showCameraDebugPanelCheckbox.addEventListener('change', (e) => {
     if (e.target.checked) {
       cameraDebugPanel.classList.remove('hidden');
     } else {
       cameraDebugPanel.classList.add('hidden');
     }
   });
-  // Initialize visibility based on checkbox state (unchecked by default)
-  if (!showCameraDebugCheckbox.checked) {
-    cameraDebugPanel.classList.add('hidden');
-  }
 }
 
 // Function to update camera debug info

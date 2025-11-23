@@ -2,6 +2,22 @@ import { defineConfig } from 'vite';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { execSync } from 'child_process';
+
+// Read package.json for version
+const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
+
+// Get git commit hash (if available)
+function getGitCommitHash() {
+  try {
+    return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+// Get build timestamp
+const buildTimestamp = new Date().toISOString();
 
 export default defineConfig({
   server: {
@@ -57,6 +73,11 @@ export default defineConfig({
         });
       }
     }
-  ]
+  ],
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+    __BUILD_TIME__: JSON.stringify(buildTimestamp),
+    __GIT_COMMIT__: JSON.stringify(getGitCommitHash()),
+  },
 });
 

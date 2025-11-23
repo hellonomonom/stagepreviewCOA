@@ -1228,6 +1228,36 @@ input[type="color"]::-moz-color-swatch {
 /* ============================================
    Camera Debug Panel
    ============================================ */
+/* Camera debug panel in settings tab - always visible, not floating */
+.tab-panel .camera-debug-panel,
+.camera-panel .camera-debug-panel {
+    position: relative;
+    top: auto;
+    left: auto;
+    min-width: auto;
+    background: transparent;
+    margin-top: var(--space-md);
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    z-index: auto;
+    font-family: var(--font-family-mono);
+    display: block;
+}
+
+.tab-panel .camera-debug-panel.hidden,
+.camera-panel .camera-debug-panel.hidden {
+    display: none !important;
+}
+
+.tab-panel .camera-debug-panel .debug-panel-content,
+.camera-panel .camera-debug-panel .debug-panel-content {
+    width: 100%;
+    padding: 0;
+}
+
+/* Legacy floating camera debug panel (kept for backwards compatibility) */
 .camera-debug-panel {
     position: fixed;
     top: var(--space-xl);
@@ -1302,12 +1332,40 @@ input[type="color"]::-moz-color-swatch {
 }
 
 .settings-panel.minimized {
-    min-width: auto;
-    width: auto;
+    display: none;
 }
 
-.settings-panel.minimized .settings-panel-toggle {
-    margin-left: auto;
+.settings-panel-burger {
+    display: none;
+    position: fixed;
+    top: var(--space-md);
+    right: var(--space-md);
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    cursor: pointer;
+    padding: var(--space-sm);
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-panel);
+    transition: all var(--transition-base);
+    box-shadow: var(--shadow-md);
+}
+
+.settings-panel-burger:hover {
+    background: var(--color-bg-button-hover);
+    box-shadow: var(--shadow-lg);
+}
+
+.settings-panel-burger .material-icons {
+    font-size: 24px;
+}
+
+.settings-panel.minimized ~ .settings-panel-burger {
+    display: flex;
 }
 
 .ndi-select {
