@@ -14,115 +14,133 @@
             <button class="settings-panel-toggle" id="settingsPanelToggle" aria-label="Minimize/Maximize">−</button>
         </div>
         <div class="settings-panel-content">
-        <!-- Media Section -->
-        <div class="control-section">
-            <div class="control-section-header">Media</div>
-            <div class="control-section-content">
-        <div class="control-group">
-                    <label class="label">Source Type</label>
-                    <div style="display: flex; gap: var(--space-sm); align-items: center;">
-                        <select id="sourceTypeSelect" class="dropdown" style="flex: 1; min-width: 180px;">
-                            <option value="texture" selected>Image/Video</option>
-                <option value="ndi">Start NDI Stream</option>
-            </select>
-                        <div class="file-input-wrapper" style="flex-shrink: 0;">
-                <input 
-                    type="file" 
-                    id="textureInput" 
-                    class="file-input" 
-                    accept="image/*,video/mp4"
-                />
-                            <label for="textureInput" class="file-input-icon" title="Load Image / Video">
-                                <span class="material-icons">folder</span>
-                </label>
-            </div>
-                    </div>
-        </div>
-                <div class="control-group" id="textureInputGroup">
-                    <label for="videoAssetSelect" class="label">Sample Assets</label>
-                    <select id="videoAssetSelect" class="dropdown">
-                        <option value="">Select a video...</option>
-                        <option value="/assets/videos/ANYMA_DunDun.mp4">ANYMA_DunDun.mp4</option>
-                        <option value="/assets/videos/ANYMA_DunDun_55FrontProjection.mp4">ANYMA_DunDun_55FrontProjection.mp4</option>
-                        <option value="/assets/videos/ANYMA_HumanNow.mp4">ANYMA_HumanNow.mp4</option>
-                        <option value="/assets/videos/ANYMA_HumanNow_55FrontProjection.mp4">ANYMA_HumanNow_55FrontProjection.mp4</option>
-                        <option value="/assets/videos/shG010_Eva_v12.mp4">shG010_Eva_v12.mp4</option>
-                        <option value="/assets/videos/shG010_Eva_v12_55FrontProjection.mp4">shG010_Eva_v12_55FrontProjection.mp4</option>
-                    </select>
-        </div>
-                <div class="control-group hidden" id="ndiStreamGroup">
-                    <label class="label">Available NDI Streams</label>
-                    <button class="btn mb-md" id="refreshNdiBtn">
-                Refresh NDI Streams
-            </button>
-                    <select id="ndiStreamSelect" class="dropdown">
-                <option value="">No streams discovered yet. Click "Refresh NDI Streams" to discover.</option>
-            </select>
-        </div>
-            </div>
-        </div>
-
-        <!-- Mapping Section -->
-        <div class="control-section">
-            <div class="control-section-header">Mapping</div>
-            <div class="control-section-content">
-                <div class="control-group">
-                    <label class="label">Mapping Type</label>
-                    <select id="mappingTypeSelect" class="dropdown">
-                        <option value="frontProjection">Front Projection Orthogonal</option>
-                        <option value="frontProjectionPerspective">Front Projection Perspective</option>
-                        <option value="festival">Festival Mapping</option>
-                    </select>
+            <div class="tab-container">
+                <div class="tab-buttons">
+                    <button class="tab-button active" id="mediaTabBtn" data-tab="media">Media</button>
+                    <button class="tab-button" id="mappingTabBtn" data-tab="mapping">Mapping</button>
+                    <button class="tab-button" id="stageTabBtn" data-tab="stage">Stage</button>
+                    <button class="tab-button" id="devTabBtn" data-tab="dev">Dev</button>
                 </div>
-                <div class="control-group">
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" id="showMapping">
-                        <label for="showMapping" class="label-inline">Show Pixelmapping</label>
+                <div class="tab-content">
+                    <!-- Media Tab Content -->
+                    <div class="tab-panel active" id="mediaTabPanel">
+                        <div class="control-group">
+                            <label class="label">Source Type</label>
+                            <div style="display: flex; gap: var(--space-sm); align-items: center;">
+                                <select id="sourceTypeSelect" class="dropdown" style="flex: 1; min-width: 180px;">
+                                    <option value="texture" selected>Image/Video</option>
+                                    <option value="ndi">NDI STREAM (WIP)</option>
+                                    <option value="checkerboard">Checkerboard</option>
+                                </select>
+                                <div class="file-input-wrapper" style="flex-shrink: 0;">
+                                    <input 
+                                        type="file" 
+                                        id="textureInput" 
+                                        class="file-input" 
+                                        accept="image/*,video/mp4"
+                                    />
+                                    <label for="textureInput" class="file-input-icon" title="Load Image / Video">
+                                        <span class="material-icons">folder</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="control-group" id="textureInputGroup">
+                            <label for="videoAssetSelect" class="label">Sample Assets</label>
+                            <select id="videoAssetSelect" class="dropdown">
+                                <option value="">Select a video...</option>
+                                <option value="/assets/videos/ANYMA_DunDun.mp4">ANYMA_DunDun.mp4</option>
+                                <option value="/assets/videos/ANYMA_DunDun_55FP.mp4">ANYMA_DunDun_55FP.mp4</option>
+                                <option value="/assets/videos/ANYMA_HumanNow.mp4">ANYMA_HumanNow.mp4</option>
+                                <option value="/assets/videos/ANYMA_HumanNow_55FP.mp4">ANYMA_HumanNow_55FP.mp4</option>
+                                <option value="/assets/videos/shG010_Eva_v12.mp4">shG010_Eva_v12.mp4</option>
+                                <option value="/assets/videos/shG010_Eva_v12_55FP.mp4">shG010_Eva_v12_55FP.mp4</option>
+                            </select>
+                        </div>
+                        <div class="control-group hidden" id="ndiStreamGroup">
+                            <label class="label">Available NDI Streams</label>
+                            <button class="btn mb-md" id="refreshNdiBtn">
+                                Refresh NDI Streams
+                            </button>
+                            <select id="ndiStreamSelect" class="dropdown">
+                                <option value="">No streams discovered yet. Click "Refresh NDI Streams" to discover.</option>
+                            </select>
+                        </div>
                     </div>
-        </div>
-        <div class="control-group">
-                    <label for="overlaySizeSlider" class="label">
-                        Mapping Overlay Size: <span class="value" id="overlaySizeValue">1.0</span>
-                    </label>
-                <input 
-                    type="range" 
-                        id="overlaySizeSlider" 
-                        class="slider" 
-                        min="0.1" 
-                        max="2" 
-                    step="0.1" 
-                        value="1.0"
-                />
-            </div>
-            </div>
-        </div>
 
-        <!-- Stage Section -->
-        <div class="control-section">
-            <div class="control-section-header">Stage</div>
-            <div class="control-section-content">
-        <div class="control-group">
-            <div class="checkbox-wrapper">
-                <input type="checkbox" id="hideLedFront">
-                <label for="hideLedFront">Hide LED Front</label>
-            </div>
+                    <!-- Mapping Tab Content -->
+                    <div class="tab-panel" id="mappingTabPanel">
+                        <div class="control-group">
+                            <label class="label">Mapping Type</label>
+                            <select id="mappingTypeSelect" class="dropdown">
+                                <option value="frontProjection">Front Projection Orthogonal</option>
+                                <option value="frontProjectionPerspective">Front Projection Perspective</option>
+                                <option value="festival">Festival Mapping</option>
+                            </select>
+                        </div>
+                        <div class="control-group" id="correctedMeshGroup" style="display: none;">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="useCorrectedMesh" />
+                                <label for="useCorrectedMesh" class="label-inline">Use corrected mesh</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="showMapping">
+                                <label for="showMapping" class="label-inline">Show Pixelmapping</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="overlaySizeSlider" class="label">
+                                Mapping Overlay Size: <span class="value" id="overlaySizeValue">1.0</span>
+                            </label>
+                            <input 
+                                type="range" 
+                                id="overlaySizeSlider" 
+                                class="slider" 
+                                min="0.1" 
+                                max="2" 
+                                step="0.1" 
+                                value="1.0"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Stage Tab Content -->
+                    <div class="tab-panel" id="stageTabPanel">
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="hideLedFront">
+                                <label for="hideLedFront">Hide LED Front</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="djDeckHeightSlider" class="label">
+                                Height DJ: <span class="value" id="djDeckHeightValue">0.0m</span>
+                            </label>
+                            <input 
+                                type="range" 
+                                id="djDeckHeightSlider" 
+                                class="slider" 
+                                min="0" 
+                                max="12" 
+                                step="0.1" 
+                                value="0"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Dev Tab Content -->
+                    <div class="tab-panel" id="devTabPanel">
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="showStyleShaderPanel">
+                                <label for="showStyleShaderPanel" class="label-inline">Show Style & Shaders Panel</label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="control-group">
-                    <label for="djDeckHeightSlider" class="label">
-                        Height DJ Deck: <span class="value" id="djDeckHeightValue">0.0m</span>
-            </label>
-            <input 
-                type="range" 
-                id="djDeckHeightSlider" 
-                class="slider" 
-                min="0" 
-                max="12" 
-                step="0.1" 
-                value="0"
-            />
-        </div>
-    </div>
-    </div>
+            </div>
         </div>
     </div>
 
@@ -140,6 +158,12 @@
                     <button class="camera-position-btn" id="cameraPos3">Position 3</button>
                     <button class="camera-position-btn" id="cameraPos4">Position 4</button>
                 </div>
+    </div>
+    <div class="control-group">
+        <div class="checkbox-wrapper">
+            <input type="checkbox" id="showCameraDebug">
+            <label for="showCameraDebug" class="label-inline">Show Debug Info</label>
+        </div>
     </div>
     <div class="camera-debug-panel" id="cameraDebugPanel">
         <div class="debug-panel-content">

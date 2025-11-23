@@ -92,6 +92,10 @@ let djArtistMesh = null; // Reference to the DJ artist mesh
 // Store reference to LED front mesh
 let ledFrontMesh = null;
 
+// Store references to wing meshes for swapping
+let slWingMesh = null;
+let srWingMesh = null;
+
 // Store references to all loaded LED meshes for swapping
 const loadedLEDMeshes = [];
 
@@ -170,23 +174,23 @@ function createPBRShaderMaterial(defaultBaseColor = [0.8, 0.8, 0.8], defaultRoug
 
 // Create shader materials for different asset types
 const shaderMaterials = {
-  base: createPBRShaderMaterial([0.188, 0.188, 0.188], 0.905, 0.300),
-  artists: createPBRShaderMaterial([0.722, 0.722, 0.722], 0.604, 0.500),
-  stage: createPBRShaderMaterial([0.239, 0.239, 0.239], 0.700, 0.200),
+  base: createPBRShaderMaterial([0.161, 0.161, 0.161], 0.000, 0.013),
+  artists: createPBRShaderMaterial([0.733, 0.729, 0.749], 0.000, 0.500),
+  stage: createPBRShaderMaterial([0.231, 0.231, 0.231], 0.700, 0.200),
   pillars: createPBRShaderMaterial([0.420, 0.420, 0.420], 1.000, 0.211),
   floor: createPBRShaderMaterial([0.129, 0.129, 0.129], 0.900, 0.000)
 };
 
 // Update all shader materials to ensure correct values
-shaderMaterials.base.uniforms.uBaseColor.value.set(0.188, 0.188, 0.188);
-shaderMaterials.base.uniforms.uRoughness.value = 0.905;
-shaderMaterials.base.uniforms.uSpecular.value = 0.300;
+shaderMaterials.base.uniforms.uBaseColor.value.set(0.161, 0.161, 0.161);
+shaderMaterials.base.uniforms.uRoughness.value = 0.000;
+shaderMaterials.base.uniforms.uSpecular.value = 0.013;
 
-shaderMaterials.artists.uniforms.uBaseColor.value.set(0.722, 0.722, 0.722);
-shaderMaterials.artists.uniforms.uRoughness.value = 0.604;
+shaderMaterials.artists.uniforms.uBaseColor.value.set(0.733, 0.729, 0.749);
+shaderMaterials.artists.uniforms.uRoughness.value = 0.000;
 shaderMaterials.artists.uniforms.uSpecular.value = 0.500;
 
-shaderMaterials.stage.uniforms.uBaseColor.value.set(0.239, 0.239, 0.239);
+shaderMaterials.stage.uniforms.uBaseColor.value.set(0.231, 0.231, 0.231);
 shaderMaterials.stage.uniforms.uRoughness.value = 0.700;
 shaderMaterials.stage.uniforms.uSpecular.value = 0.200;
 
@@ -339,19 +343,19 @@ const meshFiles = {
 function getShaderType(path) {
   const lowerPath = path.toLowerCase();
   
-  // Base shader: CATWALK, STAGE_GROUND, STAGE_DJ
-  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground') || lowerPath.includes('stage_dj')) {
-    return 'base';
-  }
-  
-  // Artists shader
+  // Artists shader - check first to ensure artist meshes get correct shader
   if (lowerPath.includes('artists')) {
     return 'artists';
   }
   
-  // Stage shader: LIFTABLE, CROWD
+  // Stage shader: LIFTABLE (including DJ_LIFTABLE), CROWD - check before stage_dj
   if (lowerPath.includes('liftable') || lowerPath.includes('crowd')) {
     return 'stage';
+  }
+  
+  // Base shader: CATWALK, STAGE_GROUND, STAGE_DJ (but not LIFTABLE)
+  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground') || lowerPath.includes('stage_dj')) {
+    return 'base';
   }
   
   // Pillars shader
@@ -374,6 +378,7 @@ function loadMesh(path, targetGroup, isStage = false) {
     path,
     (gltf) => {
       const model = gltf.scene;
+      model.userData.path = path; // Store path for identification
       targetGroup.add(model);
       
       // Store reference to LED mesh if it's an LED mesh
@@ -382,7 +387,15 @@ function loadMesh(path, targetGroup, isStage = false) {
         
         // Store reference to LED front mesh (check for both FRONT and Front naming)
         if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
-        ledFrontMesh = model;
+          ledFrontMesh = model;
+        }
+        
+        // Store references to wing meshes
+        if (path.includes('SL_WING')) {
+          slWingMesh = model;
+        }
+        if (path.includes('SR_WING')) {
+          srWingMesh = model;
         }
       }
       
@@ -420,6 +433,16 @@ function loadMesh(path, targetGroup, isStage = false) {
                 djArtistMesh = child;
                 console.log(`Found DJ artist mesh: ${child.name}`);
                 
+                // Explicitly ensure DJ artist mesh gets the artists shader
+                const artistsMaterial = shaderMaterials.artists.clone();
+                child.material = artistsMaterial;
+                
+                // Store reference for UI control
+                if (!materialReferences.artists) {
+                  materialReferences.artists = [];
+                }
+                materialReferences.artists.push(artistsMaterial);
+                
                 // Parent DJ artist mesh to liftable stage if it's already loaded
                 if (djLiftableMesh) {
                   // Remove from current parent
@@ -441,6 +464,11 @@ function loadMesh(path, targetGroup, isStage = false) {
         
         model.traverse((child) => {
           if (child.isMesh) {
+            // Skip DJ artist mesh - it already has the artists shader applied
+            if (child === djArtistMesh) {
+              return;
+            }
+            
             // Store original material if needed
             if (!child.userData.originalMaterial) {
               child.userData.originalMaterial = child.material;
@@ -457,6 +485,22 @@ function loadMesh(path, targetGroup, isStage = false) {
             materialReferences[shaderType].push(clonedMaterial);
           }
         });
+        
+        // Ensure DJ artist mesh always has artists shader after all operations
+        if (djArtistMesh && path.includes('ARTISTS')) {
+          const artistsMaterial = shaderMaterials.artists.clone();
+          djArtistMesh.material = artistsMaterial;
+          
+          // Update material reference
+          if (!materialReferences.artists) {
+            materialReferences.artists = [];
+          }
+          // Remove old reference if it exists and add new one
+          const existingIndex = materialReferences.artists.findIndex(m => m === djArtistMesh.material);
+          if (existingIndex === -1) {
+            materialReferences.artists.push(artistsMaterial);
+          }
+        }
       } else {
         // Apply LED shader to LED meshes
         model.traverse((child) => {
@@ -486,7 +530,7 @@ function loadMesh(path, targetGroup, isStage = false) {
 }
 
 // Function to load LED meshes
-function loadLEDMeshes(mappingType) {
+function loadLEDMeshes(mappingType, useCorrected = false) {
   // Clear existing LED meshes
   loadedLEDMeshes.forEach(mesh => {
     ledsGroup.remove(mesh);
@@ -506,16 +550,65 @@ function loadLEDMeshes(mappingType) {
   });
   loadedLEDMeshes.length = 0;
   ledFrontMesh = null;
+  slWingMesh = null;
+  srWingMesh = null;
+  
+  // Get paths and replace wing meshes if corrected is enabled
+  let paths = [...ledMeshFiles[mappingType]];
+  
+  if (useCorrected && (mappingType === 'frontProjection' || mappingType === 'frontProjectionPerspective')) {
+    if (mappingType === 'frontProjection') {
+      // Replace SL_WING and SR_WING for Front Projection Orthogonal
+      paths = paths.map(path => {
+        if (path.includes('SL_WING_FrontP')) {
+          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SL_WING_CORR_ORTHO.glb';
+        }
+        if (path.includes('SR_WING_FrontP')) {
+          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SR_WING_CORR_ORTHO.glb';
+        }
+        return path;
+      });
+    } else if (mappingType === 'frontProjectionPerspective') {
+      // Replace SL_WING and SR_WING for Front Projection Perspective
+      paths = paths.map(path => {
+        if (path.includes('SL_WING') && !path.includes('GARAGE')) {
+          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb';
+        }
+        if (path.includes('SR_GARAGE_FrontP') || path.includes('SR_GARAGE')) {
+          // Check if this is the SR_WING (which might be named SR_GARAGE in perspective)
+          // Actually, looking at the user's request, they want to replace SR_GARAGE_FrontP with SR_WING_CORR_PERSP
+          // But wait, let me re-read: they said "ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb replace with ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb"
+          // But in frontProjectionPerspective, the file is different. Let me check the actual file structure.
+          // The user said for Front Projection Perspective:
+          // - ANYMA_Coachella_Stage_v013_LED_SL_WING.glb replace with ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb
+          // - ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb replace with ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb
+          // But wait, SR_GARAGE_FrontP is in frontProjection, not frontProjectionPerspective. Let me re-read...
+          // Actually, I think the user made a mistake. In frontProjectionPerspective, there's SR_GARAGE (not SR_GARAGE_FrontP).
+          // But they want to replace SR_WING. Let me check the paths again.
+          // frontProjectionPerspective has: SR_GARAGE and SR_WING
+          // The user wants to replace SR_WING with the corrected version.
+          // But they also mentioned SR_GARAGE_FrontP which doesn't exist in frontProjectionPerspective.
+          // I think they meant: replace SR_WING in frontProjectionPerspective with the corrected version.
+          // Let me check: the paths show SR_GARAGE and SR_WING separately in frontProjectionPerspective.
+          // So I should replace the SR_WING path.
+        }
+        if (path.includes('SR_WING') && !path.includes('GARAGE')) {
+          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb';
+        }
+        return path;
+      });
+    }
+  }
   
   // Load new LED meshes
-  const paths = ledMeshFiles[mappingType];
   paths.forEach(path => {
-  loadMesh(path, ledsGroup, false);
-});
+    loadMesh(path, ledsGroup, false);
+  });
 }
 
 // Load initial LED meshes (Front Projection by default)
-loadLEDMeshes(currentMappingType);
+// Note: useCorrectedMeshCheckbox will be defined later, so we default to false
+loadLEDMeshes(currentMappingType, false);
 
 // Hide front screen by default for Festival Mapping, show for Front Projection types
 setTimeout(() => {
@@ -638,6 +731,66 @@ if (shaderTabBtn) {
 
 // Initialize with Style tab active
 switchTab('style');
+
+// Settings panel tab switching
+const mediaTabBtn = document.getElementById('mediaTabBtn');
+const mappingTabBtn = document.getElementById('mappingTabBtn');
+const stageTabBtn = document.getElementById('stageTabBtn');
+const devTabBtn = document.getElementById('devTabBtn');
+const mediaTabPanel = document.getElementById('mediaTabPanel');
+const mappingTabPanel = document.getElementById('mappingTabPanel');
+const stageTabPanel = document.getElementById('stageTabPanel');
+const devTabPanel = document.getElementById('devTabPanel');
+
+function switchSettingsTab(activeTabName) {
+  // Update buttons
+  mediaTabBtn?.classList.toggle('active', activeTabName === 'media');
+  mappingTabBtn?.classList.toggle('active', activeTabName === 'mapping');
+  stageTabBtn?.classList.toggle('active', activeTabName === 'stage');
+  devTabBtn?.classList.toggle('active', activeTabName === 'dev');
+  
+  // Update panels
+  mediaTabPanel?.classList.toggle('active', activeTabName === 'media');
+  mappingTabPanel?.classList.toggle('active', activeTabName === 'mapping');
+  stageTabPanel?.classList.toggle('active', activeTabName === 'stage');
+  devTabPanel?.classList.toggle('active', activeTabName === 'dev');
+}
+
+if (mediaTabBtn) {
+  mediaTabBtn.addEventListener('click', () => switchSettingsTab('media'));
+}
+if (mappingTabBtn) {
+  mappingTabBtn.addEventListener('click', () => switchSettingsTab('mapping'));
+}
+if (stageTabBtn) {
+  stageTabBtn.addEventListener('click', () => switchSettingsTab('stage'));
+}
+if (devTabBtn) {
+  devTabBtn.addEventListener('click', () => switchSettingsTab('dev'));
+}
+
+// Initialize with Media tab active
+switchSettingsTab('media');
+
+// Style-Shader panel visibility checkbox
+const showStyleShaderPanelCheckbox = document.getElementById('showStyleShaderPanel');
+if (showStyleShaderPanelCheckbox && styleShaderPanel) {
+  // Initialize as hidden (unchecked by default)
+  styleShaderPanel.style.display = 'none';
+  
+  showStyleShaderPanelCheckbox.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      styleShaderPanel.style.display = 'block';
+      // Ensure it's not minimized when shown
+      styleShaderPanel.classList.remove('minimized');
+      if (styleShaderPanelToggle) {
+        styleShaderPanelToggle.textContent = '−';
+      }
+    } else {
+      styleShaderPanel.style.display = 'none';
+    }
+  });
+}
 
 // Style-Shader panel minimize toggle
 const styleShaderPanelToggle = document.getElementById('styleShaderPanelToggle');
@@ -1287,18 +1440,73 @@ sourceTypeSelect.addEventListener('change', (e) => {
     ndiStreamGroup.style.display = 'block';
     // Auto-discover NDI streams when switching to NDI mode
     discoverNDIStreams();
+  } else if (selectedType === 'checkerboard') {
+    // Hide both texture input and NDI controls
+    textureInputGroup.style.display = 'none';
+    ndiStreamGroup.style.display = 'none';
+    
+    // Load checkerboard texture
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      '/assets/textures/UVGrid55to1.png',
+      // onLoad callback
+      (texture) => {
+        // Apply texture to shader material
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        material.uniforms.uTexture.value = texture;
+        material.uniforms.uHasTexture.value = 1.0;
+        material.uniforms.uIsImageTexture.value = 1.0;
+        
+        // Update LED shaders with the checkerboard texture
+        updateLEDShaders();
+        
+        // Hide overlay
+        if (overlayImage) overlayImage.style.display = 'none';
+        if (overlayVideo) overlayVideo.style.display = 'none';
+      },
+      // onProgress callback (optional)
+      undefined,
+      // onError callback
+      (error) => {
+        console.error('Error loading checkerboard texture:', error);
+        alert('Error loading checkerboard texture. Please ensure UVGrid55to1.png exists in /assets/textures/');
+      }
+    );
   }
 });
 
 // Mapping type dropdown change handler
 const mappingTypeSelect = document.getElementById('mappingTypeSelect');
+const useCorrectedMeshCheckbox = document.getElementById('useCorrectedMesh');
+const correctedMeshGroup = document.getElementById('correctedMeshGroup');
+
 if (mappingTypeSelect) {
   mappingTypeSelect.addEventListener('change', (e) => {
     const selectedType = e.target.value;
     currentMappingType = selectedType;
     
+    // Show/hide corrected mesh checkbox
+    if (correctedMeshGroup) {
+      if (selectedType === 'frontProjection' || selectedType === 'frontProjectionPerspective') {
+        correctedMeshGroup.style.display = 'block';
+      } else {
+        correctedMeshGroup.style.display = 'none';
+        // Uncheck when hidden
+        if (useCorrectedMeshCheckbox) {
+          useCorrectedMeshCheckbox.checked = false;
+        }
+      }
+    }
+    
+    // Get checkbox state
+    const useCorrected = useCorrectedMeshCheckbox ? useCorrectedMeshCheckbox.checked : false;
+    
     // Swap LED meshes
-    loadLEDMeshes(selectedType);
+    loadLEDMeshes(selectedType, useCorrected);
     
     // Hide front screen by default for Festival Mapping, show for Front Projection types
     setTimeout(() => {
@@ -1326,6 +1534,56 @@ if (mappingTypeSelect) {
     }, 100);
   });
 }
+
+// Corrected mesh checkbox change handler
+if (useCorrectedMeshCheckbox) {
+  useCorrectedMeshCheckbox.addEventListener('change', (e) => {
+    const useCorrected = e.target.checked;
+    // Get current visibility state before reloading
+    const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
+    
+    // Reload LED meshes with corrected state
+    loadLEDMeshes(currentMappingType, useCorrected);
+    
+    // Wait for meshes to load and then restore visibility state
+    setTimeout(() => {
+      // Find LED front mesh if it exists (it might have been reassigned)
+      if (!ledFrontMesh) {
+        ledsGroup.traverse((child) => {
+          if (child.isMesh || (child.isGroup && child.children.length > 0)) {
+            const meshName = child.name || '';
+            const path = child.userData?.path || '';
+            if ((meshName.includes('FRONT') || meshName.includes('Front') || 
+                 path.includes('LED_FRONT') || path.includes('LED_Front')) && !ledFrontMesh) {
+              ledFrontMesh = child.isMesh ? child : child.children.find(c => c.isMesh) || child;
+            }
+          }
+        });
+      }
+      
+      // Restore LED front visibility state based on checkbox
+      if (ledFrontMesh && hideLedFrontCheckbox) {
+        ledFrontMesh.visible = !shouldHideLedFront;
+      }
+      
+      // Update LED shaders with current texture after loading
+      updateLEDShaders();
+    }, 200);
+  });
+}
+
+// Initialize checkbox visibility on page load
+// Use setTimeout to ensure DOM is ready
+setTimeout(() => {
+  if (correctedMeshGroup) {
+    if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
+      correctedMeshGroup.style.display = 'block';
+    } else {
+      correctedMeshGroup.style.display = 'none';
+    }
+  }
+}, 0);
 
 // Function to fetch and display available NDI streams
 async function discoverNDIStreams() {
@@ -2807,6 +3065,22 @@ const cameraTargetY = document.getElementById('cameraTargetY');
 const cameraTargetZ = document.getElementById('cameraTargetZ');
 const copyCameraBtn = document.getElementById('copyCameraBtn');
 const cameraDebugPanel = document.getElementById('cameraDebugPanel');
+const showCameraDebugCheckbox = document.getElementById('showCameraDebug');
+
+// Toggle debug panel visibility
+if (showCameraDebugCheckbox && cameraDebugPanel) {
+  showCameraDebugCheckbox.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      cameraDebugPanel.classList.remove('hidden');
+    } else {
+      cameraDebugPanel.classList.add('hidden');
+    }
+  });
+  // Initialize visibility based on checkbox state (unchecked by default)
+  if (!showCameraDebugCheckbox.checked) {
+    cameraDebugPanel.classList.add('hidden');
+  }
+}
 
 // Function to update camera debug info
 function updateCameraDebug() {
@@ -2992,9 +3266,9 @@ const cameraPositions = [
     target: { x: 0.67, y: 2.81, z: 0.15 }
   },
   {
-    position: { x: -0.6, y: 4.31, z: 56.73 },
-    rotation: { x: -1.52, y: -1.28, z: -0.03 },
-    target: { x: 0.67, y: 2.81, z: 0.15 }
+    position: { x: 0, y: 7.8638, z: 48.918 },
+    rotation: { x: 0, y: 0, z: 0 },
+    target: { x: 0, y: 7.8638, z: 0 }
   },
   {
     position: { x: 7.3, y: 38.62, z: 80.96 },

@@ -36,10 +36,17 @@ app.use(express.json());
 
 // Serve static assets from dist folder in production (must be before SPA fallback)
 if (NODE_ENV === 'production') {
-  // Serve assets with proper MIME types
+  // Serve assets with proper MIME types and range support for videos
   app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
     maxAge: '1y', // Cache for 1 year
-    etag: true
+    etag: true,
+    setHeaders: (res, filePath) => {
+      // Ensure proper MIME types for video files
+      if (filePath.endsWith('.mp4')) {
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+      }
+    }
   }));
 }
 

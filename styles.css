@@ -973,6 +973,32 @@ canvas {
     border: none;
     border-radius: 0;
     padding: 0;
+    min-width: auto;
+    background: transparent;
+    width: 100%;
+    max-height: 1000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
+    opacity: 1;
+}
+
+.camera-panel .camera-debug-panel.hidden {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    overflow: hidden;
+}
+
+.camera-panel .camera-debug-panel .debug-panel-content {
+    width: 100%;
+}
+
+.camera-panel .camera-debug-panel .camera-session-buttons {
+    width: 100%;
+}
+
+.camera-panel .camera-debug-panel .copy-camera-btn {
+    width: 100%;
 }
 
 .camera-panel-header {
