@@ -2590,7 +2590,7 @@ function loadNDIStream(streamName) {
 }
 
 // Default video path
-const DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12.mp4';
+const DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12_55FP.mp4';
 
 // Video assets dropdown
 const videoAssetSelect = document.getElementById('videoAssetSelect');
@@ -2640,7 +2640,7 @@ function loadVideoFromPath(videoPath) {
     videoUrl = videoPath; // Use path directly (served by Vite from public folder)
   } else if (videoPath === DEFAULT_VIDEO_PATH) {
     // Use public folder path (automatically served by Vite)
-    videoUrl = '/assets/videos/shG010_Eva_v12.mp4';
+    videoUrl = '/assets/videos/shG010_Eva_v12_55FP.mp4';
   } else {
     // Try file:// URL as fallback (may not work due to browser security)
     videoUrl = 'file:///' + videoPath.replace(/\\/g, '/');
