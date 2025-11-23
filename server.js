@@ -7,6 +7,11 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Set FFmpeg path if available
 try {
@@ -19,7 +24,8 @@ const execAsync = promisify(exec);
 
 const app = express();
 const server = createServer(app);
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // WebSocket server for NDI streaming
 const wss = new WebSocketServer({ server, path: '/ndi/ws' });
@@ -699,6 +705,16 @@ async function discoverNDIViaTools() {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'NDI Discovery Service' });
 });
+
+// Serve static files from dist folder in production (must be after all API routes)
+if (NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'dist')));
+  
+  // Serve index.html for all routes (SPA fallback) - must be last
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`NDI Discovery Service running on http://localhost:${PORT}`);

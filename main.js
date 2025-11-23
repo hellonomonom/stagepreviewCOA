@@ -111,39 +111,39 @@ function createPBRShaderMaterial(defaultBaseColor = [0.8, 0.8, 0.8], defaultRoug
       uSpecular: { value: defaultSpecular },
       uCameraPosition: { value: new THREE.Vector3() }
     },
-    vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      varying vec2 vUv;
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
       varying vec3 vWorldPosition;
-      
-      void main() {
-        vUv = uv;
-        vNormal = normalize(normalMatrix * normal);
-        vPosition = position;
+    
+    void main() {
+      vUv = uv;
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = position;
         vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
       uniform vec3 uBaseColor;
       uniform float uRoughness;
       uniform float uSpecular;
       uniform vec3 uCameraPosition;
       
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      varying vec2 vUv;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
       varying vec3 vWorldPosition;
-      
-      void main() {
+    
+    void main() {
         vec3 normal = normalize(vNormal);
         
         // Calculate view direction from world position to camera
         vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
         
-        // Simple lighting calculation
-        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+      // Simple lighting calculation
+      vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
         float NdotL = max(dot(normal, lightDir), 0.0);
         
         // Ambient light
@@ -162,10 +162,10 @@ function createPBRShaderMaterial(defaultBaseColor = [0.8, 0.8, 0.8], defaultRoug
         vec3 finalColor = ambient + diffuse + specular;
         
         gl_FragColor = vec4(finalColor, 1.0);
-      }
-    `,
-    side: THREE.DoubleSide
-  });
+    }
+  `,
+  side: THREE.DoubleSide
+});
 }
 
 // Create shader materials for different asset types
@@ -382,7 +382,7 @@ function loadMesh(path, targetGroup, isStage = false) {
         
         // Store reference to LED front mesh (check for both FRONT and Front naming)
         if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
-          ledFrontMesh = model;
+        ledFrontMesh = model;
         }
       }
       
@@ -510,8 +510,8 @@ function loadLEDMeshes(mappingType) {
   // Load new LED meshes
   const paths = ledMeshFiles[mappingType];
   paths.forEach(path => {
-    loadMesh(path, ledsGroup, false);
-  });
+  loadMesh(path, ledsGroup, false);
+});
 }
 
 // Load initial LED meshes (Front Projection by default)
@@ -580,7 +580,7 @@ function makePanelDraggable(panel, dragStateVar) {
     
     if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header'))) {
       if (dragStateVar === 'control') {
-        isDragging = true;
+      isDragging = true;
       } else if (dragStateVar === 'camera') {
         isDraggingCamera = true;
       } else if (dragStateVar === 'styleShader') {
@@ -669,22 +669,22 @@ if (cameraPanelToggle && cameraPanel) {
 }
 
 // Handle mouse move for all panels
-document.addEventListener('mousemove', (e) => {
+  document.addEventListener('mousemove', (e) => {
   if (isDragging && settingsPanel) {
-    const deltaX = e.clientX - dragStartX;
-    const deltaY = e.clientY - dragStartY;
-    
-    let newX = panelStartX + deltaX;
-    let newY = panelStartY + deltaY;
-    
-    // Keep panel within viewport bounds
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+      
+      let newX = panelStartX + deltaX;
+      let newY = panelStartY + deltaY;
+      
+      // Keep panel within viewport bounds
     const panelRect = settingsPanel.getBoundingClientRect();
-    const maxX = window.innerWidth - panelRect.width;
-    const maxY = window.innerHeight - panelRect.height;
-    
-    newX = Math.max(0, Math.min(newX, maxX));
-    newY = Math.max(0, Math.min(newY, maxY));
-    
+      const maxX = window.innerWidth - panelRect.width;
+      const maxY = window.innerHeight - panelRect.height;
+      
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+      
     settingsPanel.style.left = `${newX}px`;
     settingsPanel.style.top = `${newY}px`;
     settingsPanel.style.right = 'auto';
@@ -732,9 +732,9 @@ document.addEventListener('mousemove', (e) => {
 });
 
 // Handle mouse up for all panels
-document.addEventListener('mouseup', () => {
+  document.addEventListener('mouseup', () => {
   if (isDragging && settingsPanel) {
-    isDragging = false;
+      isDragging = false;
     settingsPanel.style.cursor = 'grab';
   }
   if (isDraggingCamera && cameraPanel) {
@@ -1980,10 +1980,10 @@ const playbackControls = {
   // Update play/pause button icon
   updatePlayPauseIcon() {
     if (!this.playPauseBtn) return;
-    if (!currentVideoElement) {
+  if (!currentVideoElement) {
       this.playPauseBtn.innerHTML = this.icons.play;
-      return;
-    }
+    return;
+  }
     this.playPauseBtn.innerHTML = currentVideoElement.paused ? this.icons.play : this.icons.pause;
   },
   
@@ -2051,8 +2051,8 @@ const playbackControls = {
   // Enable/disable all controls
   setEnabled(enabled) {
     if (!this.playPauseBtn || !this.jumpToStartBtn || !this.rewindBtn || !this.jumpToEndBtn || !this.muteBtn) {
-      return;
-    }
+    return;
+  }
     
     this.playPauseBtn.disabled = !enabled;
     this.jumpToStartBtn.disabled = !enabled;
@@ -2219,8 +2219,8 @@ function loadNDIStream(streamName) {
   
   // Update status
     if (textureStatus) {
-      textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
-      textureStatus.classList.remove('loaded');
+  textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
+  textureStatus.classList.remove('loaded');
     }
   
   console.log('Loading NDI stream via WebSocket:', streamName);
@@ -2254,7 +2254,7 @@ function loadNDIStream(streamName) {
     }));
     if (textureStatus) {
       if (textureStatus) {
-        textureStatus.textContent = `Connected to ${streamName}, receiving frames...`;
+    textureStatus.textContent = `Connected to ${streamName}, receiving frames...`;
       }
     }
   };
@@ -2301,8 +2301,8 @@ function loadNDIStream(streamName) {
         console.error('WebSocket error:', data.message);
         if (textureStatus) {
           if (textureStatus) {
-            textureStatus.textContent = `Error: ${data.message}`;
-            textureStatus.classList.remove('loaded');
+        textureStatus.textContent = `Error: ${data.message}`;
+        textureStatus.classList.remove('loaded');
           }
         }
         
@@ -2319,8 +2319,8 @@ function loadNDIStream(streamName) {
     console.error('WebSocket error:', error);
     if (textureStatus) {
       if (textureStatus) {
-        textureStatus.textContent = 'Error: WebSocket connection failed';
-        textureStatus.classList.remove('loaded');
+    textureStatus.textContent = 'Error: WebSocket connection failed';
+    textureStatus.classList.remove('loaded');
       }
     }
   };
@@ -2505,7 +2505,7 @@ function loadVideoFromPath(videoPath) {
     const fileName = videoPath.split('\\').pop() || videoPath.split('/').pop();
     if (textureStatus) {
       textureStatus.textContent = fileName;
-      textureStatus.classList.add('loaded');
+    textureStatus.classList.add('loaded');
     }
     
     // Update video asset dropdown to show current selection
@@ -2519,8 +2519,8 @@ function loadVideoFromPath(videoPath) {
   
   video.addEventListener('error', (error) => {
     if (textureStatus) {
-      textureStatus.textContent = 'Error loading video (check file path)';
-      textureStatus.classList.remove('loaded');
+    textureStatus.textContent = 'Error loading video (check file path)';
+    textureStatus.classList.remove('loaded');
     }
     console.error('Error loading video:', error);
   });
@@ -2667,14 +2667,14 @@ textureInput.addEventListener('change', (e) => {
         updatePlaybackButtons(); // Enable playback controls
         if (textureStatus) {
           textureStatus.textContent = file.name;
-          textureStatus.classList.add('loaded');
+        textureStatus.classList.add('loaded');
         }
       });
       
       video.addEventListener('error', (error) => {
         if (textureStatus) {
-          textureStatus.textContent = 'Error loading video';
-          textureStatus.classList.remove('loaded');
+        textureStatus.textContent = 'Error loading video';
+        textureStatus.classList.remove('loaded');
         }
         console.error('Error loading video:', error);
       });
@@ -2686,8 +2686,8 @@ textureInput.addEventListener('change', (e) => {
     reader.onerror = () => {
       if (textureStatus) {
         if (textureStatus) {
-          textureStatus.textContent = 'Error reading file';
-          textureStatus.classList.remove('loaded');
+      textureStatus.textContent = 'Error reading file';
+      textureStatus.classList.remove('loaded');
         }
       }
     };
@@ -2699,8 +2699,8 @@ textureInput.addEventListener('change', (e) => {
   // Handle image files
   if (!file.type.startsWith('image/')) {
     if (textureStatus) {
-      textureStatus.textContent = 'Error: Please select an image or video file';
-      textureStatus.classList.remove('loaded');
+    textureStatus.textContent = 'Error: Please select an image or video file';
+    textureStatus.classList.remove('loaded');
     }
     return;
   }
@@ -2762,8 +2762,8 @@ textureInput.addEventListener('change', (e) => {
         updatePlaybackButtons();
         
         if (textureStatus) {
-          textureStatus.textContent = `Loaded: ${file.name}`;
-          textureStatus.classList.add('loaded');
+        textureStatus.textContent = `Loaded: ${file.name}`;
+        textureStatus.classList.add('loaded');
         }
       },
       // onProgress callback (optional)
@@ -2771,8 +2771,8 @@ textureInput.addEventListener('change', (e) => {
       // onError callback
       (error) => {
         if (textureStatus) {
-          textureStatus.textContent = 'Error loading texture';
-          textureStatus.classList.remove('loaded');
+        textureStatus.textContent = 'Error loading texture';
+        textureStatus.classList.remove('loaded');
         }
         console.error('Error loading texture:', error);
       }
@@ -2781,8 +2781,8 @@ textureInput.addEventListener('change', (e) => {
 
   reader.onerror = () => {
     if (textureStatus) {
-      textureStatus.textContent = 'Error reading file';
-      textureStatus.classList.remove('loaded');
+    textureStatus.textContent = 'Error reading file';
+    textureStatus.classList.remove('loaded');
     }
   };
 
