@@ -2628,6 +2628,12 @@ textureInput.addEventListener('change', (e) => {
         // Show frame info and timeline for videos
         frameInfo.classList.add('active');
         timelineContainer.classList.add('active');
+        
+        // Show playback menu for videos
+        if (playbackMenu) {
+          playbackMenu.style.display = 'block';
+        }
+        
         // Initialize timeline max value
         if (isFinite(video.duration) && video.duration > 0) {
           timelineSlider.max = 100;
