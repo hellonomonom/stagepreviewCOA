@@ -34,6 +34,15 @@ const wss = new WebSocketServer({ server, path: '/ndi/ws' });
 app.use(cors());
 app.use(express.json());
 
+// Serve static assets from dist folder in production (must be before SPA fallback)
+if (NODE_ENV === 'production') {
+  // Serve assets with proper MIME types
+  app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
+    maxAge: '1y', // Cache for 1 year
+    etag: true
+  }));
+}
+
 // NDI Discovery endpoint
 app.get('/ndi/discover', async (req, res) => {
   try {
