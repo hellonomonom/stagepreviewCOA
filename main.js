@@ -96,6 +96,9 @@ let ledFrontMesh = null;
 let slWingMesh = null;
 let srWingMesh = null;
 
+// Store LED front visibility state for restoration during mesh reload (to prevent flash)
+let restoreLedFrontVisible = true;
+
 // Store references to all loaded LED meshes for swapping
 const loadedLEDMeshes = [];
 
@@ -388,6 +391,8 @@ function loadMesh(path, targetGroup, isStage = false) {
         // Store reference to LED front mesh (check for both FRONT and Front naming)
         if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
           ledFrontMesh = model;
+          // Immediately restore visibility state to prevent flash
+          ledFrontMesh.visible = restoreLedFrontVisible;
         }
         
         // Store references to wing meshes
@@ -531,6 +536,9 @@ function loadMesh(path, targetGroup, isStage = false) {
 
 // Function to load LED meshes
 function loadLEDMeshes(mappingType, useCorrected = false) {
+  // Store LED front visibility state before clearing (to prevent flash)
+  restoreLedFrontVisible = ledFrontMesh ? ledFrontMesh.visible : true;
+  
   // Clear existing LED meshes
   loadedLEDMeshes.forEach(mesh => {
     ledsGroup.remove(mesh);
@@ -573,24 +581,6 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
       paths = paths.map(path => {
         if (path.includes('SL_WING') && !path.includes('GARAGE')) {
           return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb';
-        }
-        if (path.includes('SR_GARAGE_FrontP') || path.includes('SR_GARAGE')) {
-          // Check if this is the SR_WING (which might be named SR_GARAGE in perspective)
-          // Actually, looking at the user's request, they want to replace SR_GARAGE_FrontP with SR_WING_CORR_PERSP
-          // But wait, let me re-read: they said "ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb replace with ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb"
-          // But in frontProjectionPerspective, the file is different. Let me check the actual file structure.
-          // The user said for Front Projection Perspective:
-          // - ANYMA_Coachella_Stage_v013_LED_SL_WING.glb replace with ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb
-          // - ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb replace with ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb
-          // But wait, SR_GARAGE_FrontP is in frontProjection, not frontProjectionPerspective. Let me re-read...
-          // Actually, I think the user made a mistake. In frontProjectionPerspective, there's SR_GARAGE (not SR_GARAGE_FrontP).
-          // But they want to replace SR_WING. Let me check the paths again.
-          // frontProjectionPerspective has: SR_GARAGE and SR_WING
-          // The user wants to replace SR_WING with the corrected version.
-          // But they also mentioned SR_GARAGE_FrontP which doesn't exist in frontProjectionPerspective.
-          // I think they meant: replace SR_WING in frontProjectionPerspective with the corrected version.
-          // Let me check: the paths show SR_GARAGE and SR_WING separately in frontProjectionPerspective.
-          // So I should replace the SR_WING path.
         }
         if (path.includes('SR_WING') && !path.includes('GARAGE')) {
           return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb';
@@ -651,6 +641,8 @@ const textureStatus = document.getElementById('textureStatus'); // May be null -
 let isDragging = false;
 let isDraggingCamera = false;
 let isDraggingStyleShader = false;
+let isDraggingPlayback = false;
+let isDraggingFileInfo = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let panelStartX = 0;
@@ -671,13 +663,17 @@ function makePanelDraggable(panel, dragStateVar) {
                          target.tagName === 'BUTTON' ||
                          (target.tagName === 'LABEL' && target.getAttribute('for'));
     
-    if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header'))) {
+    if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header') || target.closest('.playback-menu-content') || target.closest('.frame-info') || target.closest('.still-info'))) {
       if (dragStateVar === 'control') {
       isDragging = true;
       } else if (dragStateVar === 'camera') {
         isDraggingCamera = true;
       } else if (dragStateVar === 'styleShader') {
         isDraggingStyleShader = true;
+      } else if (dragStateVar === 'playback') {
+        isDraggingPlayback = true;
+      } else if (dragStateVar === 'fileInfo') {
+        isDraggingFileInfo = true;
       }
       dragStartX = e.clientX;
       dragStartY = e.clientY;
@@ -846,6 +842,13 @@ if (styleShaderPanelToggle && styleShaderPanel) {
 const settingsPanelToggle = document.getElementById('settingsPanelToggle');
 const settingsPanelBurger = document.getElementById('settingsPanelBurger');
 if (settingsPanelToggle && settingsPanel) {
+  // Initialize as minimized (class is already in HTML)
+  settingsPanelToggle.textContent = '+';
+  // Show burger menu since panel is minimized
+  if (settingsPanelBurger) {
+    settingsPanelBurger.style.display = 'flex';
+  }
+  
   settingsPanelToggle.addEventListener('click', () => {
     settingsPanel.classList.toggle('minimized');
     settingsPanelToggle.textContent = settingsPanel.classList.contains('minimized') ? '+' : '−';
@@ -858,8 +861,8 @@ if (settingsPanelToggle && settingsPanel) {
 
 // Settings panel burger menu (shows when minimized)
 if (settingsPanelBurger && settingsPanel) {
-  // Initialize burger menu as hidden
-  settingsPanelBurger.style.display = 'none';
+  // Initialize burger menu as visible since panel starts minimized
+  settingsPanelBurger.style.display = 'flex';
   
   settingsPanelBurger.addEventListener('click', () => {
     settingsPanel.classList.remove('minimized');
@@ -940,6 +943,53 @@ if (cameraPanelToggle && cameraPanel) {
     styleShaderPanel.style.top = `${newY}px`;
     styleShaderPanel.style.transform = 'none';
   }
+  
+  if (isDraggingPlayback && playbackControls.playbackMenu) {
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    let newX = panelStartX + deltaX;
+    let newY = panelStartY + deltaY;
+    
+    // Keep panel within viewport bounds
+    const panelRect = playbackControls.playbackMenu.getBoundingClientRect();
+    const maxX = window.innerWidth - panelRect.width;
+    const maxY = window.innerHeight - panelRect.height;
+    
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    
+    playbackControls.playbackMenu.style.left = `${newX}px`;
+    playbackControls.playbackMenu.style.top = `${newY}px`;
+    playbackControls.playbackMenu.style.right = 'auto';
+    playbackControls.playbackMenu.style.bottom = 'auto';
+    playbackControls.playbackMenu.style.transform = 'none';
+  }
+  
+  if (isDraggingFileInfo) {
+    const fileInfoTop = document.getElementById('fileInfoTop');
+    if (fileInfoTop) {
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+      
+      let newX = panelStartX + deltaX;
+      let newY = panelStartY + deltaY;
+      
+      // Keep panel within viewport bounds
+      const panelRect = fileInfoTop.getBoundingClientRect();
+      const maxX = window.innerWidth - panelRect.width;
+      const maxY = window.innerHeight - panelRect.height;
+      
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+      
+      fileInfoTop.style.left = `${newX}px`;
+      fileInfoTop.style.top = `${newY}px`;
+      fileInfoTop.style.right = 'auto';
+      fileInfoTop.style.bottom = 'auto';
+      fileInfoTop.style.transform = 'none';
+    }
+  }
 });
 
 // Handle mouse up for all panels
@@ -955,6 +1005,17 @@ if (cameraPanelToggle && cameraPanel) {
   if (isDraggingStyleShader && styleShaderPanel) {
     isDraggingStyleShader = false;
     styleShaderPanel.style.cursor = 'grab';
+  }
+  if (isDraggingPlayback && playbackControls.playbackMenu) {
+    isDraggingPlayback = false;
+    playbackControls.playbackMenu.style.cursor = 'grab';
+  }
+  if (isDraggingFileInfo) {
+    const fileInfoTop = document.getElementById('fileInfoTop');
+    if (fileInfoTop) {
+      isDraggingFileInfo = false;
+      fileInfoTop.style.cursor = 'grab';
+    }
   }
 });
 
@@ -1629,6 +1690,41 @@ if (useCorrectedMeshCheckbox) {
       updateLEDShaders();
     }, 200);
   });
+  
+  // Reload corrected wings if checkbox is checked and mapping type supports it
+  if (useCorrectedMeshCheckbox.checked && (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective')) {
+    // Get current visibility state
+    const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
+    
+    // Reload LED meshes with corrected state
+    loadLEDMeshes(currentMappingType, true);
+    
+    // Wait for meshes to load and then restore visibility state
+    setTimeout(() => {
+      // Find LED front mesh if it exists
+      if (!ledFrontMesh) {
+        ledsGroup.traverse((child) => {
+          if (child.isMesh || (child.isGroup && child.children.length > 0)) {
+            const meshName = child.name || '';
+            const path = child.userData?.path || '';
+            if ((meshName.includes('FRONT') || meshName.includes('Front') || 
+                 path.includes('LED_FRONT') || path.includes('LED_Front')) && !ledFrontMesh) {
+              ledFrontMesh = child.isMesh ? child : child.children.find(c => c.isMesh) || child;
+            }
+          }
+        });
+      }
+      
+      // Restore LED front visibility state
+      if (ledFrontMesh && hideLedFrontCheckbox) {
+        ledFrontMesh.visible = !shouldHideLedFront;
+      }
+      
+      // Update LED shaders with current texture after loading
+      updateLEDShaders();
+    }, 200);
+  }
 }
 
 // Initialize checkbox visibility on page load
@@ -1917,12 +2013,235 @@ const mapping = document.getElementById('mapping');
 const overlayVideo = document.getElementById('overlayVideo');
 const overlayImage = document.getElementById('overlayImage');
 const frameInfo = document.getElementById('frameInfo');
+const stillInfo = document.getElementById('stillInfo');
+const stillFileNameDisplay = document.getElementById('stillFileNameDisplay');
+const showFileInfoCheckbox = document.getElementById('showFileInfo');
 const timelineContainer = document.getElementById('timelineContainer');
 const timelineSlider = document.getElementById('timelineSlider');
 let currentVideoElement = null;
 let currentVideoPath = null; // Store current video path/filename
+let currentImagePath = null; // Store current image path/filename
 let videoFrameRate = 30; // Default frame rate, will be updated if available
 let isSeeking = false;
+
+// Function to parse MP4 header to extract frame rate
+async function parseMP4FrameRate(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.mp4')) {
+    return null;
+  }
+  
+  try {
+    // Read first 64KB of file to find moov atom
+    const chunkSize = 64 * 1024;
+    const blob = file.slice(0, chunkSize);
+    const arrayBuffer = await blob.arrayBuffer();
+    const view = new DataView(arrayBuffer);
+    
+    let offset = 0;
+    const maxOffset = Math.min(arrayBuffer.byteLength, chunkSize);
+    
+    // Search for 'moov' atom (movie header atom)
+    while (offset < maxOffset - 8) {
+      const size = view.getUint32(offset);
+      const type = String.fromCharCode(
+        view.getUint8(offset + 4),
+        view.getUint8(offset + 5),
+        view.getUint8(offset + 6),
+        view.getUint8(offset + 7)
+      );
+      
+      if (type === 'moov') {
+        // Found moov atom, now search for 'mvhd' (movie header)
+        const moovSize = size;
+        const moovEnd = offset + moovSize;
+        let moovOffset = offset + 8;
+        
+        while (moovOffset < moovEnd - 8) {
+          const atomSize = view.getUint32(moovOffset);
+          const atomType = String.fromCharCode(
+            view.getUint8(moovOffset + 4),
+            view.getUint8(moovOffset + 5),
+            view.getUint8(moovOffset + 6),
+            view.getUint8(moovOffset + 7)
+          );
+          
+          if (atomType === 'mvhd') {
+            // Found mvhd atom - version is at offset 8
+            const version = view.getUint8(moovOffset + 8);
+            let timescaleOffset, durationOffset;
+            
+            if (version === 1) {
+              // 64-bit version
+              timescaleOffset = moovOffset + 20;
+              durationOffset = moovOffset + 28;
+            } else {
+              // 32-bit version
+              timescaleOffset = moovOffset + 12;
+              durationOffset = moovOffset + 16;
+            }
+            
+            const timescale = view.getUint32(timescaleOffset);
+            
+            // Now search for 'trak' atoms to find video track
+            let trakOffset = moovOffset + atomSize;
+            while (trakOffset < moovEnd - 8) {
+              const trakSize = view.getUint32(trakOffset);
+              const trakType = String.fromCharCode(
+                view.getUint8(trakOffset + 4),
+                view.getUint8(trakOffset + 5),
+                view.getUint8(trakOffset + 6),
+                view.getUint8(trakOffset + 7)
+              );
+              
+              if (trakType === 'trak') {
+                // Search for 'mdia' -> 'mdhd' to get track timescale
+                // Search for 'stbl' -> 'stts' to get time-to-sample
+                // This is complex, so let's try a simpler approach
+                // Look for 'stsd' which contains sample description
+                let mdiaOffset = trakOffset + 8;
+                const trakEnd = trakOffset + trakSize;
+                
+                while (mdiaOffset < trakEnd - 8) {
+                  const mdiaSize = view.getUint32(mdiaOffset);
+                  const mdiaType = String.fromCharCode(
+                    view.getUint8(mdiaOffset + 4),
+                    view.getUint8(mdiaOffset + 5),
+                    view.getUint8(mdiaOffset + 6),
+                    view.getUint8(mdiaOffset + 7)
+                  );
+                  
+                  if (mdiaType === 'mdia') {
+                    // Found mdia, look for mdhd
+                    let mdhdOffset = mdiaOffset + 8;
+                    const mdiaEnd = mdiaOffset + mdiaSize;
+                    
+                    while (mdhdOffset < mdiaEnd - 8) {
+                      const mdhdSize = view.getUint32(mdhdOffset);
+                      const mdhdType = String.fromCharCode(
+                        view.getUint8(mdhdOffset + 4),
+                        view.getUint8(mdhdOffset + 5),
+                        view.getUint8(mdhdOffset + 6),
+                        view.getUint8(mdhdOffset + 7)
+                      );
+                      
+                      if (mdhdType === 'mdhd') {
+                        const mdhdVersion = view.getUint8(mdhdOffset + 8);
+                        let trackTimescaleOffset;
+                        
+                        if (mdhdVersion === 1) {
+                          trackTimescaleOffset = mdhdOffset + 20;
+                        } else {
+                          trackTimescaleOffset = mdhdOffset + 12;
+                        }
+                        
+                        const trackTimescale = view.getUint32(trackTimescaleOffset);
+                        
+                        // If we have timescale, we can calculate frame rate
+                        // But we need sample count and duration from stts
+                        // For now, return timescale as it's often close to frame rate
+                        if (trackTimescale > 0 && trackTimescale <= 120) {
+                          return trackTimescale;
+                        }
+                      }
+                      
+                      mdhdOffset += mdhdSize;
+                    }
+                  }
+                  
+                  mdiaOffset += mdiaSize;
+                }
+              }
+              
+              trakOffset += trakSize;
+            }
+            
+            // If we found timescale but not track timescale, use movie timescale
+            if (timescale > 0 && timescale <= 120) {
+              return timescale;
+            }
+          }
+          
+          moovOffset += atomSize;
+        }
+      }
+      
+      offset += size || 1;
+    }
+  } catch (e) {
+    console.error('Error parsing MP4 header:', e);
+  }
+  
+  return null;
+}
+
+// Function to detect frame rate from server using ffprobe
+async function detectFrameRateFromServer(videoPath) {
+  try {
+    const response = await fetch(`/api/video/framerate?videoPath=${encodeURIComponent(videoPath)}`);
+    
+    if (!response.ok) {
+      // If server endpoint fails, return null (will fall back to other methods)
+      console.warn('Server frame rate detection failed:', response.status, response.statusText);
+      return null;
+    }
+    
+    const data = await response.json();
+    if (data.fps && data.fps > 0 && data.fps <= 120) {
+      return Math.round(data.fps);
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn('Error fetching frame rate from server:', error);
+    return null;
+  }
+}
+
+// Function to detect frame rate from video metadata only
+async function detectVideoFrameRate(videoElement, file = null, videoPath = null) {
+  // First try server-side detection if we have a video path
+  if (videoPath) {
+    const serverFps = await detectFrameRateFromServer(videoPath);
+    if (serverFps) {
+      return serverFps;
+    }
+  }
+  
+  // Fall back to parsing MP4 header if we have a file
+  if (file) {
+    const headerFps = await parseMP4FrameRate(file);
+    if (headerFps) {
+      return headerFps;
+    }
+  }
+  
+  if (!videoElement) {
+    return null;
+  }
+  
+  // Try to get from video element metadata (if available)
+  // Note: HTML5 video API doesn't directly expose frame rate,
+  // but we can try to calculate it from duration and frame count if available
+  try {
+    // Some browsers might expose this via webkitDecodedFrameCount
+    // This is a workaround - not all browsers support this
+    if (videoElement.webkitDecodedFrameCount !== undefined && videoElement.duration) {
+      const frameCount = videoElement.webkitDecodedFrameCount;
+      const duration = videoElement.duration;
+      if (frameCount > 0 && duration > 0) {
+        const calculatedFps = Math.round(frameCount / duration);
+        if (calculatedFps > 0 && calculatedFps <= 120) {
+          return calculatedFps;
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  
+  // Return null if frame rate cannot be detected from metadata
+  return null;
+}
 
 // Function to adjust mapping overlay to match aspect ratio
 function adjustMappingAspectRatio(width, height) {
@@ -2017,6 +2336,47 @@ function getVideoCodec(video, path) {
   return 'unknown';
 }
 
+// Function to get image metadata (bit depth and colorspace)
+function getImageMetadata(file, imageElement) {
+  // Default values
+  let bitDepth = '8bit';
+  let colorspace = 'sRGB';
+  
+  // Try to detect bit depth from file extension or type
+  const fileName = file ? file.name.toLowerCase() : '';
+  if (fileName.endsWith('.png') || fileName.endsWith('.tiff') || fileName.endsWith('.tif')) {
+    // PNG and TIFF can be 16bit, but we'll default to 8bit unless we can detect otherwise
+    bitDepth = '8bit';
+  }
+  
+  // Try to detect from image data if available
+  if (imageElement && imageElement.naturalWidth) {
+    // For now, we'll use defaults. In a real implementation, you might:
+    // - Use EXIF data for bit depth
+    // - Check image color profile for colorspace
+    // - Use canvas to analyze pixel data
+  }
+  
+  return { bitDepth, colorspace };
+}
+
+// Function to update still info display
+function updateStillInfo(file) {
+  if (!stillInfo || !stillFileNameDisplay) return;
+  
+  const fileName = getFileName(file ? file.name : (currentImagePath || ''));
+  const metadata = getImageMetadata(file, overlayImage);
+  
+  stillFileNameDisplay.textContent = `${fileName} (${metadata.bitDepth}, ${metadata.colorspace})`;
+  
+  // Show stillInfo at top if checkbox is checked
+  if (showFileInfoCheckbox && showFileInfoCheckbox.checked) {
+    stillInfo.classList.add('active');
+  } else {
+    stillInfo.classList.remove('active');
+  }
+}
+
 // Function to update frame info display
 function updateFrameInfo(video) {
   const fileNameDisplay = document.getElementById('fileNameDisplay');
@@ -2040,7 +2400,7 @@ function updateFrameInfo(video) {
       if (frameText) frameText.textContent = 'Frame: 0 / 0';
     }
     if (fileNameDisplay) {
-      fileNameDisplay.textContent = fileName ? `${fileName} (${videoFrameRate} fps, ${codec})` : '';
+      fileNameDisplay.textContent = fileName ? `${fileName} (${codec})` : '';
     }
     if (timeDisplay) timeDisplay.textContent = '00:00';
     if (totalTimeDisplay) totalTimeDisplay.textContent = '00:00';
@@ -2054,7 +2414,7 @@ function updateFrameInfo(video) {
   
   // Update filename display with codec info
   if (fileNameDisplay) {
-    fileNameDisplay.textContent = `${fileName} (${videoFrameRate} fps, ${codec})`;
+    fileNameDisplay.textContent = `${fileName} (${codec})`;
   }
   
   // Update frame counter
@@ -2062,6 +2422,12 @@ function updateFrameInfo(video) {
     // Find the span that contains "Frame:" (third span, after fileNameDisplay and separator)
     const frameText = frameInfo.querySelector('span:nth-child(3)');
     if (frameText) frameText.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
+    // Show frameInfo at top if checkbox is checked
+    if (showFileInfoCheckbox && showFileInfoCheckbox.checked) {
+      frameInfo.classList.add('active');
+    } else {
+      frameInfo.classList.remove('active');
+    }
   }
   
   // Update current time display (format as mm:ss)
@@ -2453,9 +2819,31 @@ const playbackControls = {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     playbackControls.init();
+    // Make playback menu draggable after initialization
+    if (playbackControls.playbackMenu) {
+      makePanelDraggable(playbackControls.playbackMenu, 'playback');
+      playbackControls.playbackMenu.style.cursor = 'grab';
+    }
+    // Make file info top draggable
+    const fileInfoTop = document.getElementById('fileInfoTop');
+    if (fileInfoTop) {
+      makePanelDraggable(fileInfoTop, 'fileInfo');
+      fileInfoTop.style.cursor = 'grab';
+    }
   });
 } else {
   playbackControls.init();
+  // Make playback menu draggable after initialization
+  if (playbackControls.playbackMenu) {
+    makePanelDraggable(playbackControls.playbackMenu, 'playback');
+    playbackControls.playbackMenu.style.cursor = 'grab';
+  }
+  // Make file info top draggable
+  const fileInfoTop = document.getElementById('fileInfoTop');
+  if (fileInfoTop) {
+    makePanelDraggable(fileInfoTop, 'fileInfo');
+    fileInfoTop.style.cursor = 'grab';
+  }
 }
 
 // Update button states based on video availability (wrapper for compatibility)
@@ -2483,6 +2871,11 @@ let frameContext = null;
 
 // Function to load NDI stream as texture using WebSocket + Canvas
 function loadNDIStream(streamName) {
+  // Hide file info displays for NDI streams
+  if (frameInfo) frameInfo.classList.remove('active');
+  if (stillInfo) stillInfo.classList.remove('active');
+  currentImagePath = null;
+  
   // Clean up previous video element and texture if they exist
   if (currentVideoElement) {
     // Stop and remove the old video
@@ -2523,10 +2916,11 @@ function loadNDIStream(streamName) {
   
   // Hide overlay and frame info until new stream is loaded
   mapping.classList.remove('active');
-  frameInfo.classList.remove('active');
-  timelineContainer.classList.remove('active');
-  overlayVideo.src = '';
-  overlayImage.src = '';
+    frameInfo.classList.remove('active');
+    if (stillInfo) stillInfo.classList.remove('active');
+    timelineContainer.classList.remove('active');
+    overlayVideo.src = '';
+    overlayImage.src = '';
   
   // Hide playback menu until stream is loaded
   if (playbackMenu) {
@@ -2665,10 +3059,90 @@ if (videoAssetSelect) {
   });
 }
 
+// Handle show file info checkbox
+const fileInfoSizeWrapper = document.getElementById('fileInfoSizeWrapper');
+if (showFileInfoCheckbox) {
+  // Initialize slider visibility based on checkbox state
+  if (fileInfoSizeWrapper) {
+    fileInfoSizeWrapper.style.display = showFileInfoCheckbox.checked ? 'flex' : 'none';
+  }
+  
+  showFileInfoCheckbox.addEventListener('change', (e) => {
+    const isChecked = e.target.checked;
+    
+    // Show/hide size slider based on checkbox state
+    if (fileInfoSizeWrapper) {
+      fileInfoSizeWrapper.style.display = isChecked ? 'flex' : 'none';
+    }
+    
+    // Update frameInfo visibility for videos
+    if (currentVideoElement && frameInfo) {
+      if (isChecked) {
+        frameInfo.classList.add('active');
+      } else {
+        frameInfo.classList.remove('active');
+      }
+    }
+    // Update stillInfo visibility for images
+    if (overlayImage && overlayImage.style.display !== 'none' && stillInfo) {
+      if (isChecked) {
+        stillInfo.classList.add('active');
+      } else {
+        stillInfo.classList.remove('active');
+      }
+    }
+  });
+}
+
+// Handle file info size slider
+const fileInfoSizeSlider = document.getElementById('fileInfoSize');
+const fileInfoSizeValue = document.getElementById('fileInfoSizeValue');
+
+function updateFileInfoSize(sizePercent) {
+  const sizeMultiplier = sizePercent / 100;
+  
+  // Use transform scale to scale from center
+  if (frameInfo) {
+    frameInfo.style.transform = `scale(${sizeMultiplier})`;
+    frameInfo.style.transformOrigin = 'center';
+  }
+  if (stillInfo) {
+    stillInfo.style.transform = `scale(${sizeMultiplier})`;
+    stillInfo.style.transformOrigin = 'center';
+  }
+}
+
+if (fileInfoSizeSlider && fileInfoSizeValue) {
+  // Initialize with default value (100%)
+  const initialValue = parseFloat(fileInfoSizeSlider.value);
+  fileInfoSizeValue.textContent = `${initialValue}%`;
+  updateFileInfoSize(initialValue);
+  
+  fileInfoSizeSlider.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    fileInfoSizeValue.textContent = `${value}%`;
+    updateFileInfoSize(value);
+  });
+} else {
+  // Initialize scale to 1.0 (100%) even if slider doesn't exist yet
+  if (frameInfo) {
+    frameInfo.style.transform = 'scale(1)';
+    frameInfo.style.transformOrigin = 'center';
+  }
+  if (stillInfo) {
+    stillInfo.style.transform = 'scale(1)';
+    stillInfo.style.transformOrigin = 'center';
+  }
+}
+
 // Function to load video from path
 function loadVideoFromPath(videoPath) {
   // Store current video path
   currentVideoPath = videoPath;
+  currentImagePath = null; // Clear image path when loading video
+  
+  // Hide stillInfo when loading video
+  if (stillInfo) stillInfo.classList.remove('active');
   
   // Clean up previous video element if it exists
   if (currentVideoElement) {
@@ -2681,10 +3155,11 @@ function loadVideoFromPath(videoPath) {
   
   // Hide overlay and frame info until new video is loaded
   mapping.classList.remove('active');
-  frameInfo.classList.remove('active');
-  timelineContainer.classList.remove('active');
-  overlayVideo.src = '';
-  overlayImage.src = '';
+    frameInfo.classList.remove('active');
+    if (stillInfo) stillInfo.classList.remove('active');
+    timelineContainer.classList.remove('active');
+    overlayVideo.src = '';
+    overlayImage.src = '';
   
   // Hide playback menu until video is loaded
   if (playbackMenu) {
@@ -2727,6 +3202,9 @@ function loadVideoFromPath(videoPath) {
   }
   
   video.addEventListener('loadeddata', () => {
+    // Try to get frame rate from video metadata (default to 30fps)
+    videoFrameRate = 30; // Default, could be improved with actual video metadata
+    
     // Create video texture
     const videoTexture = new THREE.VideoTexture(video);
     videoTexture.wrapS = THREE.RepeatWrapping;
@@ -2786,7 +3264,10 @@ function loadVideoFromPath(videoPath) {
     }
     
     // Show frame info and timeline, update them
-    frameInfo.classList.add('active');
+    if (showFileInfoCheckbox && showFileInfoCheckbox.checked) {
+      frameInfo.classList.add('active');
+    }
+    if (stillInfo) stillInfo.classList.remove('active');
     timelineContainer.classList.add('active');
     
     // Show playback menu for videos
@@ -2868,10 +3349,11 @@ textureInput.addEventListener('change', (e) => {
   
   // Hide overlay and frame info until new video is loaded
   mapping.classList.remove('active');
-  frameInfo.classList.remove('active');
-  timelineContainer.classList.remove('active');
-  overlayVideo.src = '';
-  overlayImage.src = '';
+        frameInfo.classList.remove('active');
+        if (stillInfo) stillInfo.classList.remove('active');
+        timelineContainer.classList.remove('active');
+        overlayVideo.src = '';
+        overlayImage.src = '';
 
   // Check if it's a video file
   if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4')) {
@@ -2889,6 +3371,9 @@ textureInput.addEventListener('change', (e) => {
       video.playsInline = true;
       
       video.addEventListener('loadeddata', () => {
+        // Try to get frame rate from video metadata (default to 30fps)
+        videoFrameRate = 30; // Default, could be improved with actual video metadata
+        
         // Create video texture
         const videoTexture = new THREE.VideoTexture(video);
         videoTexture.wrapS = THREE.RepeatWrapping;
@@ -2942,7 +3427,10 @@ textureInput.addEventListener('change', (e) => {
         video.addEventListener('timeupdate', syncOverlay);
         
         // Show frame info and timeline for videos
-        frameInfo.classList.add('active');
+        if (showFileInfoCheckbox && showFileInfoCheckbox.checked) {
+          frameInfo.classList.add('active');
+        }
+        if (stillInfo) stillInfo.classList.remove('active');
         timelineContainer.classList.add('active');
         
         // Show playback menu for videos
@@ -3066,9 +3554,15 @@ textureInput.addEventListener('change', (e) => {
           }
         };
         
+        // Store current image path
+        currentImagePath = file.name;
+        
         // Hide frame info and timeline for images (only show for videos)
         frameInfo.classList.remove('active');
         timelineContainer.classList.remove('active');
+        
+        // Show still info for images
+        updateStillInfo(file);
         
         // Hide playback menu for images
         if (playbackMenu) {

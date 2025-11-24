@@ -6,9 +6,16 @@
     <title>Stage Preview COA</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <link rel="stylesheet" href="/styles.css">
+    
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/assets/textures/favicon/favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="/assets/textures/favicon/favicon-96x96.png">
+    <link rel="icon" type="image/x-icon" href="/assets/textures/favicon/favicon.ico">
+    <link rel="apple-touch-icon" href="/assets/textures/favicon/apple-touch-icon.png">
+    <link rel="manifest" href="/assets/textures/favicon/site.webmanifest">
 </head>
 <body>
-    <div class="settings-panel" id="settingsPanel">
+    <div class="settings-panel minimized" id="settingsPanel">
         <div class="settings-panel-header">
             <div class="control-section-header">Settings</div>
             <button class="settings-panel-toggle" id="settingsPanelToggle" aria-label="Minimize/Maximize">−</button>
@@ -54,6 +61,18 @@
                                 <option value="/assets/videos/ANYMA_HumanNow_55FP.mp4">ANYMA_HumanNow_55FP.mp4</option>
                                 <option value="/assets/videos/shG010_Eva_v12_55FP.mp4">shG010_Eva_v12_55FP.mp4</option>
                             </select>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper" style="display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: var(--space-sm);">
+                                    <input type="checkbox" id="showFileInfo" checked>
+                                    <label for="showFileInfo" class="label-inline">Show file info</label>
+                                </div>
+                                <div id="fileInfoSizeWrapper" style="display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 200px;">
+                                    <input type="range" id="fileInfoSize" class="slider" min="50" max="200" step="5" value="100" style="flex: 1;">
+                                    <span class="value" id="fileInfoSizeValue" style="min-width: 40px; text-align: right;">100%</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="control-group hidden" id="ndiStreamGroup">
                             <label class="label">Available NDI Streams</label>
@@ -486,15 +505,23 @@
         </div>
     </div>
 
+    <!-- File Info Display (Top Center) -->
+    <div class="file-info-top" id="fileInfoTop">
+        <!-- Frame Info for Videos -->
+        <div class="frame-info" id="frameInfo">
+            <span id="fileNameDisplay"></span>
+            <span class="frame-info-separator">|</span>
+            <span>Frame: 0 / 0</span>
+        </div>
+        <!-- Still Info for Images -->
+        <div class="still-info" id="stillInfo">
+            <span id="stillFileNameDisplay"></span>
+        </div>
+    </div>
+
     <!-- Playback Menu -->
     <div class="playback-menu" id="playbackMenu">
         <div class="playback-menu-content">
-            <!-- Frame Info -->
-            <div class="frame-info" id="frameInfo">
-                <span id="fileNameDisplay"></span>
-                <span class="frame-info-separator">|</span>
-                <span>Frame: 0 / 0</span>
-            </div>
             
             <!-- Timeline Slider -->
             <div class="timeline-container" id="timelineContainer">

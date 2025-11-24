@@ -717,7 +717,117 @@ async function discoverNDIViaTools() {
   return streams;
 }
 
-// Health check endpoint
+// Endpoint to detect video frame rate using ffprobe
+app.get('/api/video/framerate', async (req, res) => {
+  try {
+    const { videoPath } = req.query;
+    
+    if (!videoPath) {
+      return res.status(400).json({ error: 'videoPath parameter is required' });
+    }
+    
+    // Determine full file path
+    let fullPath;
+    if (videoPath.startsWith('/assets/videos/')) {
+      // Video from public folder
+      if (NODE_ENV === 'production') {
+        fullPath = path.join(__dirname, 'dist', videoPath);
+      } else {
+        fullPath = path.join(__dirname, 'public', videoPath);
+      }
+    } else if (videoPath.startsWith('/')) {
+      // Absolute path
+      fullPath = path.join(__dirname, videoPath);
+    } else {
+      // Relative path
+      fullPath = path.join(__dirname, videoPath);
+    }
+    
+    // Security: ensure path is within project directory
+    const resolvedPath = path.resolve(fullPath);
+    const projectRoot = path.resolve(__dirname);
+    if (!resolvedPath.startsWith(projectRoot)) {
+      return res.status(403).json({ error: 'Access denied: path outside project directory' });
+    }
+    
+    // Check if file exists
+    const fs = await import('fs');
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'Video file not found' });
+    }
+    
+    // Use ffprobe to get frame rate
+    // ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1
+    // Try to get ffprobe path from ffmpeg-installer, fall back to system ffprobe
+    let ffprobePath = 'ffprobe';
+    try {
+      // ffmpeg-installer provides both ffmpeg and ffprobe at the same location
+      const ffmpegPath = ffmpegInstaller.path;
+      if (ffmpegPath) {
+        // Replace 'ffmpeg' with 'ffprobe' in the path
+        ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1');
+      }
+    } catch (e) {
+      // Use system ffprobe if installer path not available
+      console.log('Using system ffprobe');
+    }
+    
+    const command = `"${ffprobePath}" -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1 "${resolvedPath}"`;
+    
+    try {
+      const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
+      
+      if (stderr && !stdout) {
+        console.error('FFprobe error:', stderr);
+        return res.status(500).json({ error: 'Failed to detect frame rate', details: stderr });
+      }
+      
+      const frameRateStr = stdout.trim();
+      if (!frameRateStr || frameRateStr === 'N/A') {
+        return res.status(404).json({ error: 'Frame rate not found in video metadata' });
+      }
+      
+      // Parse frame rate (can be in format like "30/1" or "30000/1001")
+      const [numerator, denominator] = frameRateStr.split('/').map(Number);
+      if (isNaN(numerator) || isNaN(denominator) || denominator === 0) {
+        return res.status(500).json({ error: 'Invalid frame rate format', value: frameRateStr });
+      }
+      
+      const fps = numerator / denominator;
+      
+      // Validate fps is reasonable
+      if (fps <= 0 || fps > 120) {
+        return res.status(500).json({ error: 'Frame rate out of valid range', fps });
+      }
+      
+      res.json({ fps: Math.round(fps * 100) / 100, raw: frameRateStr });
+    } catch (execError) {
+      console.error('FFprobe execution error:', execError);
+      return res.status(500).json({ 
+        error: 'Failed to execute ffprobe', 
+        details: execError.message,
+        hint: 'Make sure ffprobe is installed and accessible'
+      });
+    }
+  } catch (error) {
+    console.error('Error detecting frame rate:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
+// Endpoint to detect frame rate from uploaded file
+app.post('/api/video/framerate/upload', async (req, res) => {
+  try {
+    // This would require multer for file uploads
+    // For now, we'll handle file uploads differently
+    // The client can send the file as base64 or we can use a different approach
+    res.status(501).json({ error: 'File upload endpoint not yet implemented. Use file path endpoint instead.' });
+  } catch (error) {
+    console.error('Error processing uploaded file:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'NDI Discovery Service' });
 });
