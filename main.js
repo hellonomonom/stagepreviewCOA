@@ -569,10 +569,10 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
       // Replace SL_WING and SR_WING for Front Projection Orthogonal
       paths = paths.map(path => {
         if (path.includes('SL_WING_FrontP')) {
-          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SL_WING_CORR_ORTHO.glb';
+          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SL_WING_CORR_ORTHO.glb';
         }
         if (path.includes('SR_WING_FrontP')) {
-          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SR_WING_CORR_ORTHO.glb';
+          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_ORTHO.glb';
         }
         return path;
       });
@@ -580,10 +580,10 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
       // Replace SL_WING and SR_WING for Front Projection Perspective
       paths = paths.map(path => {
         if (path.includes('SL_WING') && !path.includes('GARAGE')) {
-          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb';
+          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb';
         }
         if (path.includes('SR_WING') && !path.includes('GARAGE')) {
-          return '/assets/meshes/CorrectedWings/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb';
+          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb';
         }
         return path;
       });
