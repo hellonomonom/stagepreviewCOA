@@ -8,6 +8,9 @@ dist/
 .env
 .env.local
 
+# Deployment configuration (contains sensitive SSH keys)
+deploy.config.json
+
 # IDE
 .vscode/
 .idea/

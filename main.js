@@ -2815,10 +2815,58 @@ const playbackControls = {
   }
 };
 
+// Keyboard controls for video playback
+function setupKeyboardControls() {
+  document.addEventListener('keydown', (e) => {
+    // Don't handle keys if user is typing in an input field
+    const activeElement = document.activeElement;
+    const isInputFocused = activeElement && (
+      activeElement.tagName === 'INPUT' ||
+      activeElement.tagName === 'TEXTAREA' ||
+      activeElement.tagName === 'SELECT' ||
+      activeElement.isContentEditable
+    );
+    
+    // Only handle keys if a video is loaded and user is not typing
+    if (!currentVideoElement || isInputFocused) {
+      return;
+    }
+    
+    // Handle keyboard shortcuts
+    switch (e.key.toLowerCase()) {
+      case ' ': // Spacebar - play/pause
+        e.preventDefault(); // Prevent page scroll
+        playbackControls.togglePlayPause();
+        break;
+      case 'j': // J - go back 10 seconds
+        e.preventDefault();
+        playbackControls.jumpSeconds(-10);
+        break;
+      case 'k': // K - play/pause
+        e.preventDefault();
+        playbackControls.togglePlayPause();
+        break;
+      case 'l': // L - go forward 10 seconds
+        e.preventDefault();
+        playbackControls.jumpSeconds(10);
+        break;
+      case 'h': // H - go to beginning
+        e.preventDefault();
+        playbackControls.jumpToStart();
+        break;
+      case 'm': // M - mute/unmute
+        e.preventDefault();
+        playbackControls.toggleMute();
+        break;
+    }
+  });
+}
+
 // Initialize playback controls when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     playbackControls.init();
+    setupKeyboardControls();
     // Make playback menu draggable after initialization
     if (playbackControls.playbackMenu) {
       makePanelDraggable(playbackControls.playbackMenu, 'playback');
@@ -2833,6 +2881,7 @@ if (document.readyState === 'loading') {
   });
 } else {
   playbackControls.init();
+  setupKeyboardControls();
   // Make playback menu draggable after initialization
   if (playbackControls.playbackMenu) {
     makePanelDraggable(playbackControls.playbackMenu, 'playback');

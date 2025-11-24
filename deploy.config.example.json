@@ -1,0 +1,8 @@
+{
+  "sshKey": "C:\\Users\\tobia\\Dropbox\\_Projects\\Anyma\\Coachella26\\StagePreview\\Deployment\\privatekey",
+  "serverUser": "root",
+  "serverHost": "157.230.118.34",
+  "serverPath": "/var/www/stagepreview-coa"
+}
+
+
