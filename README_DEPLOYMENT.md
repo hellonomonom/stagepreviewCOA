@@ -95,3 +95,7 @@ The `deploy.config.json` file contains:
 - `deploy.config.json` - Your actual config (gitignored, create from example)
 - `deploy.sh` - Server-side deployment script (runs on the server)
 
+
+
+
+

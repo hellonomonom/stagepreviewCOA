@@ -96,6 +96,9 @@ let ledFrontMesh = null;
 let slWingMesh = null;
 let srWingMesh = null;
 
+// Store reference to floor mesh
+let floorMesh = null;
+
 
 // Store LED front visibility state for restoration during mesh reload (to prevent flash)
 let restoreLedFrontVisible = true;
@@ -182,7 +185,7 @@ const shaderMaterials = {
   artists: createPBRShaderMaterial([0.733, 0.729, 0.749], 0.000, 0.500),
   stage: createPBRShaderMaterial([0.231, 0.231, 0.231], 0.700, 0.200),
   pillars: createPBRShaderMaterial([0.420, 0.420, 0.420], 1.000, 0.211),
-  floor: createPBRShaderMaterial([0.129, 0.129, 0.129], 0.900, 0.000),
+  floor: createPBRShaderMaterial([0.102, 0.102, 0.102], 0.900, 0.000),
   crowd: createPBRShaderMaterial([0.5, 0.5, 0.5], 0.500, 0.300)
 };
 
@@ -203,7 +206,7 @@ shaderMaterials.pillars.uniforms.uBaseColor.value.set(0.420, 0.420, 0.420);
 shaderMaterials.pillars.uniforms.uRoughness.value = 1.000;
 shaderMaterials.pillars.uniforms.uSpecular.value = 0.211;
 
-shaderMaterials.floor.uniforms.uBaseColor.value.set(0.129, 0.129, 0.129);
+shaderMaterials.floor.uniforms.uBaseColor.value.set(0.102, 0.102, 0.102);
 shaderMaterials.floor.uniforms.uRoughness.value = 0.900;
 shaderMaterials.floor.uniforms.uSpecular.value = 0.000;
 
@@ -315,15 +318,15 @@ const ledMeshFiles = {
     '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_US_WALL.glb'
   ],
   frontProjection: [
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_Front_FrontP.glb',
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SL_GARAGE_FrontP.glb',
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SL_WING_FrontP.glb',
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb',
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_SR_WING_FrontP.glb',
-    '/assets/meshes/FrontProjection/ANYMA_Coachella_Stage_v010_LED_US_WALL_FrontP.glb'
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v013_LED_FRONT_ortho.glb',
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SL_GARAGE_FrontP.glb',
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SL_WING_FrontP.glb',
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb',
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SR_WING_FrontP.glb',
+    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_US_WALL_FrontP.glb'
   ],
   frontProjectionPerspective: [
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT_Perspective.glb',
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_GARAGE.glb',
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_WING.glb',
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_GARAGE.glb',
@@ -432,6 +435,17 @@ function loadMesh(path, targetGroup, isStage = false) {
             djLiftableMesh.add(djArtistMesh);
             console.log('Parented DJ artist mesh to liftable stage');
           }
+        }
+        
+        // Store reference to floor mesh
+        if (path.includes('FLOOR') || path.includes('Floor') || path.includes('floor')) {
+          floorMesh = model;
+          console.log('Floor mesh loaded');
+          
+          // Spawn crowd cubes on the floor after a short delay to ensure mesh is fully loaded
+          setTimeout(() => {
+            spawnCrowdCubes();
+          }, 100);
         }
         
         // Store individual meshes from artists model for individual control
@@ -631,11 +645,367 @@ setTimeout(() => {
 }, 100);
 
 // Load all Stage meshes
+let stageMeshesLoaded = 0;
+const totalStageMeshes = meshFiles.stage.length;
+
 meshFiles.stage.forEach(path => {
   loadMesh(path, stageGroup, true);
+  // Track when all stage meshes are loaded
+  // Note: loadMesh is async, so we'll check after a delay
 });
 
-// Crowd spawning removed - will be re-added later
+// After all meshes are loaded, respawn crowd instances to default value
+setTimeout(() => {
+  // Reset slider to default value (100)
+  const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
+  const crowdInstanceCountValue = document.getElementById('crowdInstanceCountValue');
+  
+  if (crowdInstanceCountSlider) {
+    crowdInstanceCountSlider.value = 100;
+    if (crowdInstanceCountValue) {
+      crowdInstanceCountValue.textContent = '100';
+    }
+    
+    // Respawn with default value
+    if (floorMesh && crowdMeshData.length > 0) {
+      console.log('Scene loaded, respawning crowd instances to default value (100)');
+      spawnCrowdInstances();
+    } else if (floorMesh) {
+      // Floor is loaded but crowd meshes might not be, trigger spawn which will load them
+      console.log('Scene loaded, triggering crowd spawn (will load meshes if needed)');
+      spawnCrowdCubes();
+    }
+  }
+}, 2000); // Wait 2 seconds for all meshes to load
+
+// Crowd spawning - individual crowd meshes on the floor mesh with random mesh selection
+let crowdInstances = null;
+let crowdMeshes = []; // Array to store individual meshes
+let crowdGeometry = null;
+let crowdMaterial = null;
+
+// Store pre-loaded crowd mesh geometries and materials
+const crowdMeshData = []; // Array of {geometry, material} objects
+const crowdMeshPaths = [
+  '/assets/meshes/Crowd/crowd_v001_female1.glb',
+  '/assets/meshes/Crowd/crowd_v001_female2.glb',
+  '/assets/meshes/Crowd/crowd_v001_female3.glb',
+  '/assets/meshes/Crowd/crowd_v001_male1.glb',
+  '/assets/meshes/Crowd/crowd_v001_male2.glb'
+];
+
+function spawnCrowdCubes() {
+  if (!floorMesh) {
+    console.warn('Floor mesh not available for crowd spawning');
+    return;
+  }
+  
+  console.log('Spawning crowd cubes, floorMesh:', floorMesh);
+
+  // Remove existing crowd instances if they exist - thorough cleanup
+  if (crowdInstances) {
+    // Remove from scene first
+    if (crowdInstances.parent) {
+      crowdInstances.parent.remove(crowdInstances);
+    }
+    scene.remove(crowdInstances);
+    
+    // Properly dispose of InstancedMesh
+    crowdInstances.dispose();
+    crowdInstances = null;
+  }
+  
+  // Also search scene for any remaining crowd instances by name (safety check)
+  scene.traverse((object) => {
+    if (object.name === 'CrowdInstances' && object !== crowdInstances) {
+      scene.remove(object);
+      if (object.dispose) {
+        object.dispose();
+      }
+    }
+  });
+  
+  // Remove individual meshes if they exist
+  crowdMeshes.forEach(mesh => {
+    if (mesh.parent) {
+      mesh.parent.remove(mesh);
+    }
+    scene.remove(mesh);
+    if (mesh.geometry) {
+      mesh.geometry.dispose();
+    }
+    if (mesh.material) {
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach(mat => mat.dispose());
+      } else {
+        mesh.material.dispose();
+      }
+    }
+  });
+  crowdMeshes = [];
+  console.log('Cleaned up old crowd meshes');
+  
+  // Pre-load all crowd meshes if not already loaded
+  if (crowdMeshData.length === 0) {
+    let loadedCount = 0;
+    const totalMeshes = crowdMeshPaths.length;
+    
+    crowdMeshPaths.forEach((path) => {
+      gltfLoader.load(
+        path,
+        (gltf) => {
+          const model = gltf.scene;
+          let foundGeometry = null;
+          let foundMaterial = null;
+          
+          model.traverse((child) => {
+            if (child.isMesh) {
+              if (!foundGeometry) {
+                foundGeometry = child.geometry;
+                foundMaterial = child.material;
+              }
+            }
+          });
+          
+          if (foundGeometry && foundMaterial) {
+            // Clone geometry to avoid sharing issues
+            const geometry = foundGeometry.clone();
+            
+            // Clone material and set color
+            const material = foundMaterial.clone();
+            if (material.color) {
+              material.color.setHex(0x1e1e1e);
+            } else if (material.uniforms && material.uniforms.diffuse) {
+              material.uniforms.diffuse.value.setHex(0x1e1e1e);
+            }
+            
+            crowdMeshData.push({
+              geometry: geometry,
+              material: material
+            });
+            
+            console.log(`Loaded crowd mesh ${path}, total loaded: ${crowdMeshData.length}`);
+          }
+          
+          loadedCount++;
+          console.log(`Crowd mesh loading progress: ${loadedCount}/${totalMeshes}, loaded meshes: ${crowdMeshData.length}`);
+          if (loadedCount === totalMeshes) {
+            // All meshes loaded, now spawn
+            console.log(`All ${crowdMeshData.length} crowd meshes loaded, spawning instances with randomization`);
+            spawnCrowdInstances();
+          }
+        },
+        (error) => {
+          console.error(`Error loading crowd mesh ${path}:`, error);
+          loadedCount++;
+          if (loadedCount === totalMeshes) {
+            // Even if some failed, try to spawn with what we have
+            if (crowdMeshData.length > 0) {
+              spawnCrowdInstances();
+            }
+          }
+        }
+      );
+    });
+  } else {
+    // Meshes already loaded, spawn directly
+    spawnCrowdInstances();
+  }
+}
+
+function spawnCrowdInstances() {
+  if (crowdMeshData.length === 0) {
+    console.error('No crowd mesh data available');
+    return;
+  }
+      
+  // Update floor mesh world matrix first
+  floorMesh.updateMatrixWorld(true);
+  
+  // Find the actual floor mesh (floorMesh might be a Group)
+  let actualFloorMesh = null;
+  if (floorMesh.isMesh) {
+    actualFloorMesh = floorMesh;
+  } else {
+    // If it's a Group, find the first mesh
+    floorMesh.traverse((child) => {
+      if (child.isMesh && !actualFloorMesh) {
+        actualFloorMesh = child;
+      }
+    });
+  }
+  
+  if (!actualFloorMesh) {
+    console.error('Could not find floor mesh geometry');
+    return;
+  }
+  
+  // Get floor mesh bounding box (using world matrix)
+  // Traverse all meshes in the floor group to get accurate bounding box
+  const box = new THREE.Box3();
+  const tempBox = new THREE.Box3();
+  let hasMesh = false;
+  
+  floorMesh.traverse((child) => {
+    if (child.isMesh) {
+      child.updateMatrixWorld(true);
+      tempBox.setFromObject(child);
+      if (!hasMesh) {
+        box.copy(tempBox);
+        hasMesh = true;
+      } else {
+        box.union(tempBox);
+      }
+    }
+  });
+  
+  if (!hasMesh) {
+    console.error('No meshes found in floor group');
+    return;
+  }
+  
+  const floorSize = box.getSize(new THREE.Vector3());
+  const floorCenter = box.getCenter(new THREE.Vector3());
+  const floorMin = box.min;
+  
+  console.log('Floor bounding box:', { floorSize, floorCenter, floorMin });
+  
+  // Validate bounding box
+  if (floorSize.x === 0 || floorSize.z === 0) {
+    console.error('Floor mesh has invalid bounding box:', floorSize);
+    return;
+  }
+  
+  // Get instance count from slider, default to 100
+  const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
+  const instanceCount = crowdInstanceCountSlider ? parseInt(crowdInstanceCountSlider.value) : 100;
+  
+  // If count is 0, just remove all instances and return
+  if (instanceCount === 0) {
+    if (crowdInstances) {
+      scene.remove(crowdInstances);
+      crowdInstances.dispose();
+      crowdInstances = null;
+    }
+    return;
+  }
+  
+  // Generate random positions on the floor mesh
+  // Keep some margin from the edges
+  const margin = 0.1; // 10% margin from edges
+  const xRange = floorSize.x * (1 - 2 * margin);
+  const zRange = floorSize.z * (1 - 2 * margin);
+  const xMin = floorCenter.x - xRange / 2;
+  const zMin = floorCenter.z - zRange / 2;
+  
+  const positions = [];
+  for (let i = 0; i < instanceCount; i++) {
+    positions.push({
+      x: xMin + Math.random() * xRange,
+      z: zMin + Math.random() * zRange
+    });
+  }
+
+  // Use raycaster to find the floor surface height at each position
+  const raycaster = new THREE.Raycaster();
+  const rayDirection = new THREE.Vector3(0, -1, 0);
+      
+  // Create individual meshes with random geometry selection for each position
+  positions.forEach((pos, index) => {
+    // Randomly select a crowd mesh - ensure we have meshes available
+    if (crowdMeshData.length === 0) {
+      console.error('No crowd mesh data available for spawning');
+      return;
+    }
+    
+    const randomIndex = Math.floor(Math.random() * crowdMeshData.length);
+    const meshData = crowdMeshData[randomIndex];
+    
+    console.log(`Instance ${index}: Using mesh ${randomIndex} of ${crowdMeshData.length}`);
+    
+    // Start ray from above the floor
+    const rayOrigin = new THREE.Vector3(pos.x, floorMin.y + floorSize.y + 10, pos.z);
+    raycaster.set(rayOrigin, rayDirection);
+    
+    // Find intersection with floor mesh
+    const intersects = raycaster.intersectObject(floorMesh, true);
+    
+    // Create a temporary mesh to calculate bounding box
+    const tempMesh = new THREE.Mesh(meshData.geometry, meshData.material);
+    const meshBox = new THREE.Box3();
+    meshBox.setFromObject(tempMesh);
+    const meshMin = meshBox.min;
+    const meshSize = meshBox.getSize(new THREE.Vector3());
+    
+    let yPos = floorMin.y + floorSize.y * 0.5;
+    
+    if (intersects.length > 0) {
+      // Position crowd mesh on top of the floor surface
+      // Adjust for the mesh's base offset (meshMin.y is typically negative)
+      yPos = intersects[0].point.y - meshMin.y;
+    } else {
+      // Fallback: use bounding box top
+      yPos = floorMin.y + floorSize.y - meshMin.y;
+    }
+    
+    // Create a new mesh with the randomly selected geometry
+    // Clone geometry to ensure each mesh is independent
+    const clonedGeometry = meshData.geometry.clone();
+    
+    // Ensure geometry is properly computed
+    if (!clonedGeometry.boundingBox) {
+      clonedGeometry.computeBoundingBox();
+    }
+    
+    const clonedMaterial = meshData.material.clone();
+    
+    // Ensure material is properly set up
+    clonedMaterial.needsUpdate = true;
+    
+    const mesh = new THREE.Mesh(clonedGeometry, clonedMaterial);
+    mesh.position.set(pos.x, yPos, pos.z);
+    mesh.rotation.y = -Math.PI / 2; // 90 degrees clockwise
+    mesh.name = `CrowdInstance_${index}`;
+    
+    // Ensure mesh is visible and properly set up
+    mesh.visible = true;
+    mesh.frustumCulled = false; // Disable frustum culling to ensure visibility
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    
+    // Add to scene
+    scene.add(mesh);
+    crowdMeshes.push(mesh);
+    
+    if (index < 5) { // Only log first 5 to avoid spam
+      console.log(`Created mesh ${index} at position (${pos.x.toFixed(2)}, ${yPos.toFixed(2)}, ${pos.z.toFixed(2)}), geometry vertices: ${clonedGeometry.attributes.position.count}`);
+    }
+  });
+  
+  console.log(`Spawned ${instanceCount} crowd meshes on floor mesh with random mesh selection`);
+  console.log(`Total crowd meshes in array: ${crowdMeshes.length}`);
+  
+  // Verify meshes are in scene
+  const meshesInScene = [];
+  scene.traverse((object) => {
+    if (object.name && object.name.startsWith('CrowdInstance_')) {
+      meshesInScene.push(object.name);
+    }
+  });
+  console.log(`Meshes found in scene: ${meshesInScene.length}`, meshesInScene.slice(0, 10));
+  
+  // Check first mesh if it exists
+  if (crowdMeshes.length > 0) {
+    const firstMesh = crowdMeshes[0];
+    console.log('First mesh details:', {
+      position: firstMesh.position,
+      visible: firstMesh.visible,
+      geometry: firstMesh.geometry ? 'exists' : 'missing',
+      material: firstMesh.material ? 'exists' : 'missing',
+      inScene: scene.children.includes(firstMesh)
+    });
+  }
+}
 
 // Add lights - brighter and more neutral for accurate color display
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased intensity
@@ -2737,6 +3107,25 @@ djDeckHeightSlider.addEventListener('input', (e) => {
     djLiftableMesh.position.y = value;
   }
 });
+
+// Crowd instance count slider
+const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
+const crowdInstanceCountValue = document.getElementById('crowdInstanceCountValue');
+
+if (crowdInstanceCountSlider && crowdInstanceCountValue) {
+  // Update display value
+  crowdInstanceCountValue.textContent = crowdInstanceCountSlider.value;
+  
+  crowdInstanceCountSlider.addEventListener('input', (e) => {
+    const value = parseInt(e.target.value);
+    crowdInstanceCountValue.textContent = value;
+    
+    // Respawn crowd instances with new count
+    if (floorMesh) {
+      spawnCrowdCubes();
+    }
+  });
+}
 
 showMappingCheckbox.addEventListener('change', (e) => {
   if (e.target.checked) {

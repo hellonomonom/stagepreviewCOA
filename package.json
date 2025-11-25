@@ -12,7 +12,9 @@
     "start:pm2": "pm2 start ecosystem.config.cjs",
     "deploy": "bash deploy.sh",
     "deploy:remote": "powershell -ExecutionPolicy Bypass -File deploy-remote.ps1",
-    "deploy:remote:bash": "bash deploy-remote.sh"
+    "deploy:remote:bash": "bash deploy-remote.sh",
+    "quick-deploy": "powershell -ExecutionPolicy Bypass -File quick-deploy.ps1",
+    "quick-deploy:bash": "bash quick-deploy.sh"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
