@@ -3208,6 +3208,8 @@ const playbackControls = {
   jumpToStartBtn: null,
   rewindBtn: null,
   jumpToEndBtn: null,
+  prevFrameBtn: null,
+  nextFrameBtn: null,
   muteBtn: null,
   volumeSlider: null,
   playbackMenu: null,
@@ -3289,6 +3291,30 @@ const playbackControls = {
     this.jumpSeconds(timeOffset);
   },
   
+  // Jump to previous frame
+  jumpPreviousFrame() {
+    if (!currentVideoElement || videoFrameRate <= 0) return;
+    // Pause video if playing
+    if (!currentVideoElement.paused) {
+      currentVideoElement.pause();
+      overlayVideo.pause();
+      this.updatePlayPauseIcon();
+    }
+    this.jumpFrames(-1);
+  },
+  
+  // Jump to next frame
+  jumpNextFrame() {
+    if (!currentVideoElement || videoFrameRate <= 0) return;
+    // Pause video if playing
+    if (!currentVideoElement.paused) {
+      currentVideoElement.pause();
+      overlayVideo.pause();
+      this.updatePlayPauseIcon();
+    }
+    this.jumpFrames(1);
+  },
+  
   // Toggle mute
   toggleMute() {
     if (!currentVideoElement) return;
@@ -3325,6 +3351,12 @@ const playbackControls = {
     this.jumpToStartBtn.disabled = !enabled;
     this.rewindBtn.disabled = !enabled;
     this.jumpToEndBtn.disabled = !enabled;
+    if (this.prevFrameBtn) {
+      this.prevFrameBtn.disabled = !enabled;
+    }
+    if (this.nextFrameBtn) {
+      this.nextFrameBtn.disabled = !enabled;
+    }
     this.muteBtn.disabled = !enabled;
     if (this.volumeSlider) {
       this.volumeSlider.disabled = !enabled;
@@ -3348,6 +3380,8 @@ const playbackControls = {
     this.jumpToStartBtn = document.getElementById('jumpToStartBtn');
     this.rewindBtn = document.getElementById('rewindBtn');
     this.jumpToEndBtn = document.getElementById('jumpToEndBtn');
+    this.prevFrameBtn = document.getElementById('prevFrameBtn');
+    this.nextFrameBtn = document.getElementById('nextFrameBtn');
     this.muteBtn = document.getElementById('muteBtn');
     this.volumeSlider = document.getElementById('volumeSlider');
     this.playbackMenu = document.getElementById('playbackMenu');
@@ -3385,6 +3419,21 @@ const playbackControls = {
       this.jumpSeconds(this.TIME_JUMP_AMOUNT);
     }, true);
     
+    // Frame navigation buttons
+    if (this.prevFrameBtn) {
+      this.prevFrameBtn.addEventListener('click', (e) => {
+        console.log('Previous frame button clicked');
+        this.jumpPreviousFrame();
+      }, true);
+    }
+    
+    if (this.nextFrameBtn) {
+      this.nextFrameBtn.addEventListener('click', (e) => {
+        console.log('Next frame button clicked');
+        this.jumpNextFrame();
+      }, true);
+    }
+    
     this.muteBtn.addEventListener('click', (e) => {
       console.log('Mute button clicked');
       this.toggleMute();
@@ -3403,6 +3452,12 @@ const playbackControls = {
     this.jumpToStartBtn.style.pointerEvents = 'auto';
     this.rewindBtn.style.pointerEvents = 'auto';
     this.jumpToEndBtn.style.pointerEvents = 'auto';
+    if (this.prevFrameBtn) {
+      this.prevFrameBtn.style.pointerEvents = 'auto';
+    }
+    if (this.nextFrameBtn) {
+      this.nextFrameBtn.style.pointerEvents = 'auto';
+    }
     this.muteBtn.style.pointerEvents = 'auto';
     if (this.volumeSlider) {
       this.volumeSlider.style.pointerEvents = 'auto';
