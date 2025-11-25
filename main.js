@@ -3132,11 +3132,11 @@ function applyBlackToGarages(apply) {
           // Apply black material
           child.material = blackMaterial;
         } else {
-          // Restore original material if available
-          if (child.userData.originalMaterial) {
-            child.material = child.userData.originalMaterial;
-            child.userData.originalMaterial = null;
-          }
+          // Restore LED shader material (always create fresh to ensure uniforms are current)
+          child.material = createLEDShaderMaterial();
+          // Update shader with current texture
+          updateLEDShaders();
+          child.userData.originalMaterial = null;
         }
       }
     });
@@ -3209,6 +3209,7 @@ const playbackControls = {
   rewindBtn: null,
   jumpToEndBtn: null,
   muteBtn: null,
+  volumeSlider: null,
   playbackMenu: null,
   
   // Constants
@@ -3293,6 +3294,25 @@ const playbackControls = {
     if (!currentVideoElement) return;
     currentVideoElement.muted = !currentVideoElement.muted;
     this.updateMuteIcon();
+    // Don't change volume slider position when toggling mute
+    // The slider position represents the volume level, which is preserved
+  },
+  
+  // Update volume
+  updateVolume(volume) {
+    if (!currentVideoElement) return;
+    // Volume is 0-1, slider is 0-100
+    currentVideoElement.volume = volume / 100;
+    // If volume is set above 0, unmute
+    if (volume > 0 && currentVideoElement.muted) {
+      currentVideoElement.muted = false;
+      this.updateMuteIcon();
+    }
+    // If volume is set to 0, mute
+    if (volume === 0 && !currentVideoElement.muted) {
+      currentVideoElement.muted = true;
+      this.updateMuteIcon();
+    }
   },
   
   // Enable/disable all controls
@@ -3306,12 +3326,18 @@ const playbackControls = {
     this.rewindBtn.disabled = !enabled;
     this.jumpToEndBtn.disabled = !enabled;
     this.muteBtn.disabled = !enabled;
+    if (this.volumeSlider) {
+      this.volumeSlider.disabled = !enabled;
+    }
     
     if (enabled && currentVideoElement) {
       this.updatePlayPauseIcon();
       this.updateMuteIcon();
       // Set volume to 100% when video is enabled
       currentVideoElement.volume = 1.0;
+      if (this.volumeSlider) {
+        this.volumeSlider.value = 100;
+      }
     }
   },
   
@@ -3323,6 +3349,7 @@ const playbackControls = {
     this.rewindBtn = document.getElementById('rewindBtn');
     this.jumpToEndBtn = document.getElementById('jumpToEndBtn');
     this.muteBtn = document.getElementById('muteBtn');
+    this.volumeSlider = document.getElementById('volumeSlider');
     this.playbackMenu = document.getElementById('playbackMenu');
     
     // Check if elements exist
@@ -3363,12 +3390,23 @@ const playbackControls = {
       this.toggleMute();
     }, true);
     
+    // Volume slider event listener
+    if (this.volumeSlider) {
+      this.volumeSlider.addEventListener('input', (e) => {
+        const volume = parseInt(e.target.value);
+        this.updateVolume(volume);
+      }, true);
+    }
+    
     // Ensure buttons are clickable
     this.playPauseBtn.style.pointerEvents = 'auto';
     this.jumpToStartBtn.style.pointerEvents = 'auto';
     this.rewindBtn.style.pointerEvents = 'auto';
     this.jumpToEndBtn.style.pointerEvents = 'auto';
     this.muteBtn.style.pointerEvents = 'auto';
+    if (this.volumeSlider) {
+      this.volumeSlider.style.pointerEvents = 'auto';
+    }
     
     // Make sure buttons aren't disabled unless needed
     if (!this.playPauseBtn.disabled) {
