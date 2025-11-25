@@ -38,20 +38,20 @@
 ## 3. Front Projection Perspective
 
 ### Without Corrected Mesh:
-1. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT_Perspective.glb`
-2. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_GARAGE.glb`
-3. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_WING.glb`
-4. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_GARAGE.glb`
-5. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_WING.glb`
-6. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_US_WALL.glb`
+1. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_FRONT_Perspective.glb`
+2. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_GARAGE.glb`
+3. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_WING.glb`
+4. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_GARAGE.glb`
+5. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_WING.glb`
+6. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_US_WALL.glb`
 
 ### With Corrected Mesh:
-1. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT_Perspective.glb`
-2. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_GARAGE.glb`
+1. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_FRONT_Perspective.glb`
+2. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_GARAGE.glb`
 3. **`/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb`** ← Replaces SL_WING
-4. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_GARAGE.glb`
+4. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_GARAGE.glb`
 5. **`/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb`** ← Replaces SR_WING
-6. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_US_WALL.glb`
+6. `/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_US_WALL.glb`
 
 **Changes with corrected:** SL_WING and SR_WING are replaced with corrected versions (perspective variants).
 

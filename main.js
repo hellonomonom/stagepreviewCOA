@@ -326,12 +326,12 @@ const ledMeshFiles = {
     '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_US_WALL_FrontP.glb'
   ],
   frontProjectionPerspective: [
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_FRONT_Perspective.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_GARAGE.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SL_WING.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_GARAGE.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_SR_WING.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v013_LED_US_WALL.glb'
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_FRONT_Perspective.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_GARAGE.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_WING.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_GARAGE.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_WING.glb',
+    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_US_WALL.glb'
   ]
 };
 
