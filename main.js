@@ -96,6 +96,7 @@ let ledFrontMesh = null;
 let slWingMesh = null;
 let srWingMesh = null;
 
+
 // Store LED front visibility state for restoration during mesh reload (to prevent flash)
 let restoreLedFrontVisible = true;
 
@@ -181,7 +182,8 @@ const shaderMaterials = {
   artists: createPBRShaderMaterial([0.733, 0.729, 0.749], 0.000, 0.500),
   stage: createPBRShaderMaterial([0.231, 0.231, 0.231], 0.700, 0.200),
   pillars: createPBRShaderMaterial([0.420, 0.420, 0.420], 1.000, 0.211),
-  floor: createPBRShaderMaterial([0.129, 0.129, 0.129], 0.900, 0.000)
+  floor: createPBRShaderMaterial([0.129, 0.129, 0.129], 0.900, 0.000),
+  crowd: createPBRShaderMaterial([0.5, 0.5, 0.5], 0.500, 0.300)
 };
 
 // Update all shader materials to ensure correct values
@@ -205,13 +207,18 @@ shaderMaterials.floor.uniforms.uBaseColor.value.set(0.129, 0.129, 0.129);
 shaderMaterials.floor.uniforms.uRoughness.value = 0.900;
 shaderMaterials.floor.uniforms.uSpecular.value = 0.000;
 
+shaderMaterials.crowd.uniforms.uBaseColor.value.set(0.5, 0.5, 0.5);
+shaderMaterials.crowd.uniforms.uRoughness.value = 0.500;
+shaderMaterials.crowd.uniforms.uSpecular.value = 0.300;
+
 // Store references to all materials for UI control
 const materialReferences = {
   base: [],
   artists: [],
   stage: [],
   pillars: [],
-  floor: []
+  floor: [],
+  crowd: []
 };
 
 // Double-sided shader material for stage meshes (legacy, kept for backwards compatibility)
@@ -349,6 +356,11 @@ function getShaderType(path) {
   // Artists shader - check first to ensure artist meshes get correct shader
   if (lowerPath.includes('artists')) {
     return 'artists';
+  }
+  
+  // Crowd shader - check for crowd folder/meshes (before general crowd check)
+  if (lowerPath.includes('crowd/') || (lowerPath.includes('crowd') && lowerPath.includes('.glb') && !lowerPath.includes('stage_crowd'))) {
+    return 'crowd';
   }
   
   // Stage shader: LIFTABLE (including DJ_LIFTABLE), CROWD - check before stage_dj
@@ -623,6 +635,8 @@ meshFiles.stage.forEach(path => {
   loadMesh(path, stageGroup, true);
 });
 
+// Crowd spawning removed - will be re-added later
+
 // Add lights - brighter and more neutral for accurate color display
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased intensity
 scene.add(ambientLight);
@@ -655,7 +669,16 @@ const styleShaderPanel = document.getElementById('styleShaderPanel');
 function makePanelDraggable(panel, dragStateVar) {
   if (!panel) return;
   
-  panel.addEventListener('mousedown', (e) => {
+  // Helper function to get client coordinates from mouse or touch event
+  function getClientCoords(e) {
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+  
+  // Helper function to handle drag start
+  function handleDragStart(e) {
     // Only start dragging if clicking on the panel background or labels (not interactive elements)
     const target = e.target;
     const isInteractive = target.tagName === 'INPUT' || 
@@ -664,8 +687,10 @@ function makePanelDraggable(panel, dragStateVar) {
                          (target.tagName === 'LABEL' && target.getAttribute('for'));
     
     if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header') || target.closest('.playback-menu-content') || target.closest('.frame-info') || target.closest('.still-info'))) {
+      const coords = getClientCoords(e);
+      
       if (dragStateVar === 'control') {
-      isDragging = true;
+        isDragging = true;
       } else if (dragStateVar === 'camera') {
         isDraggingCamera = true;
       } else if (dragStateVar === 'styleShader') {
@@ -675,8 +700,9 @@ function makePanelDraggable(panel, dragStateVar) {
       } else if (dragStateVar === 'fileInfo') {
         isDraggingFileInfo = true;
       }
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
+      
+      dragStartX = coords.x;
+      dragStartY = coords.y;
       
       const rect = panel.getBoundingClientRect();
       panelStartX = rect.left;
@@ -685,7 +711,11 @@ function makePanelDraggable(panel, dragStateVar) {
       panel.style.cursor = 'grabbing';
       e.preventDefault();
     }
-  });
+  }
+  
+  // Add both mouse and touch event listeners
+  panel.addEventListener('mousedown', handleDragStart);
+  panel.addEventListener('touchstart', handleDragStart, { passive: false });
 }
 
 // Make control panel draggable
@@ -882,11 +912,21 @@ if (cameraPanelToggle && cameraPanel) {
   });
 }
 
-// Handle mouse move for all panels
-  document.addEventListener('mousemove', (e) => {
+// Helper function to get client coordinates from mouse or touch event
+function getClientCoords(e) {
+  if (e.touches && e.touches.length > 0) {
+    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  return { x: e.clientX, y: e.clientY };
+}
+
+// Handle mouse and touch move for all panels
+function handlePanelMove(e) {
+  const coords = getClientCoords(e);
+  
   if (isDragging && settingsPanel) {
-      const deltaX = e.clientX - dragStartX;
-      const deltaY = e.clientY - dragStartY;
+      const deltaX = coords.x - dragStartX;
+      const deltaY = coords.y - dragStartY;
       
       let newX = panelStartX + deltaX;
       let newY = panelStartY + deltaY;
@@ -902,11 +942,12 @@ if (cameraPanelToggle && cameraPanel) {
     settingsPanel.style.left = `${newX}px`;
     settingsPanel.style.top = `${newY}px`;
     settingsPanel.style.right = 'auto';
+    e.preventDefault();
   }
   
   if (isDraggingCamera && cameraPanel) {
-    const deltaX = e.clientX - dragStartX;
-    const deltaY = e.clientY - dragStartY;
+    const deltaX = coords.x - dragStartX;
+    const deltaY = coords.y - dragStartY;
     
     let newX = panelStartX + deltaX;
     let newY = panelStartY + deltaY;
@@ -922,11 +963,12 @@ if (cameraPanelToggle && cameraPanel) {
     cameraPanel.style.left = `${newX}px`;
     cameraPanel.style.top = `${newY}px`;
     cameraPanel.style.right = 'auto';
+    e.preventDefault();
   }
   
   if (isDraggingStyleShader && styleShaderPanel) {
-    const deltaX = e.clientX - dragStartX;
-    const deltaY = e.clientY - dragStartY;
+    const deltaX = coords.x - dragStartX;
+    const deltaY = coords.y - dragStartY;
     
     let newX = panelStartX + deltaX;
     let newY = panelStartY + deltaY;
@@ -942,11 +984,12 @@ if (cameraPanelToggle && cameraPanel) {
     styleShaderPanel.style.left = `${newX}px`;
     styleShaderPanel.style.top = `${newY}px`;
     styleShaderPanel.style.transform = 'none';
+    e.preventDefault();
   }
   
   if (isDraggingPlayback && playbackControls.playbackMenu) {
-    const deltaX = e.clientX - dragStartX;
-    const deltaY = e.clientY - dragStartY;
+    const deltaX = coords.x - dragStartX;
+    const deltaY = coords.y - dragStartY;
     
     let newX = panelStartX + deltaX;
     let newY = panelStartY + deltaY;
@@ -964,13 +1007,14 @@ if (cameraPanelToggle && cameraPanel) {
     playbackControls.playbackMenu.style.right = 'auto';
     playbackControls.playbackMenu.style.bottom = 'auto';
     playbackControls.playbackMenu.style.transform = 'none';
+    e.preventDefault();
   }
   
   if (isDraggingFileInfo) {
     const fileInfoTop = document.getElementById('fileInfoTop');
     if (fileInfoTop) {
-      const deltaX = e.clientX - dragStartX;
-      const deltaY = e.clientY - dragStartY;
+      const deltaX = coords.x - dragStartX;
+      const deltaY = coords.y - dragStartY;
       
       let newX = panelStartX + deltaX;
       let newY = panelStartY + deltaY;
@@ -988,12 +1032,16 @@ if (cameraPanelToggle && cameraPanel) {
       fileInfoTop.style.right = 'auto';
       fileInfoTop.style.bottom = 'auto';
       fileInfoTop.style.transform = 'none';
+      e.preventDefault();
     }
   }
-});
+}
 
-// Handle mouse up for all panels
-  document.addEventListener('mouseup', () => {
+document.addEventListener('mousemove', handlePanelMove);
+document.addEventListener('touchmove', handlePanelMove, { passive: false });
+
+// Handle mouse and touch end for all panels
+function handlePanelEnd() {
   if (isDragging && settingsPanel) {
       isDragging = false;
     settingsPanel.style.cursor = 'grab';
@@ -1017,7 +1065,11 @@ if (cameraPanelToggle && cameraPanel) {
       fileInfoTop.style.cursor = 'grab';
     }
   }
-});
+}
+
+document.addEventListener('mouseup', handlePanelEnd);
+document.addEventListener('touchend', handlePanelEnd);
+document.addEventListener('touchcancel', handlePanelEnd);
 
 // Shader Controls - Wire up UI to update shader uniforms
 function updateShaderUniforms(shaderType, uniformName, value) {
@@ -1401,6 +1453,65 @@ function initShaderControls() {
     });
   }
 
+  // Crowd shader controls
+  const crowdColorR = document.getElementById('crowdColorR');
+  const crowdColorG = document.getElementById('crowdColorG');
+  const crowdColorB = document.getElementById('crowdColorB');
+  const crowdColorPicker = document.getElementById('crowdColorPicker');
+  const crowdRoughness = document.getElementById('crowdRoughness');
+  const crowdSpecular = document.getElementById('crowdSpecular');
+
+  function updateCrowdColor() {
+    const r = parseFloat(crowdColorR.value);
+    const g = parseFloat(crowdColorG.value);
+    const b = parseFloat(crowdColorB.value);
+    updateShaderUniforms('crowd', 'uBaseColor', [r, g, b]);
+    if (document.getElementById('crowdColorRValue')) document.getElementById('crowdColorRValue').textContent = r.toFixed(2);
+    if (document.getElementById('crowdColorGValue')) document.getElementById('crowdColorGValue').textContent = g.toFixed(2);
+    if (document.getElementById('crowdColorBValue')) document.getElementById('crowdColorBValue').textContent = b.toFixed(2);
+    
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+    if (crowdColorPicker) crowdColorPicker.value = hex;
+  }
+
+  if (crowdColorR && crowdColorG && crowdColorB) {
+    crowdColorR.addEventListener('input', updateCrowdColor);
+    crowdColorG.addEventListener('input', updateCrowdColor);
+    crowdColorB.addEventListener('input', updateCrowdColor);
+  }
+
+  if (crowdColorPicker) {
+    crowdColorPicker.addEventListener('input', (e) => {
+      const hex = e.target.value;
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      crowdColorR.value = r;
+      crowdColorG.value = g;
+      crowdColorB.value = b;
+      updateCrowdColor();
+    });
+  }
+
+  if (crowdRoughness) {
+    crowdRoughness.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('crowd', 'uRoughness', value);
+      if (document.getElementById('crowdRoughnessValue')) document.getElementById('crowdRoughnessValue').textContent = value.toFixed(2);
+    });
+  }
+
+  if (crowdSpecular) {
+    crowdSpecular.addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      updateShaderUniforms('crowd', 'uSpecular', value);
+      if (document.getElementById('crowdSpecularValue')) document.getElementById('crowdSpecularValue').textContent = value.toFixed(2);
+    });
+  }
+
   // Copy button functionality - reads current values from UI controls
   function copyShaderValues(shaderType) {
     // Get current values from UI controls
@@ -1447,6 +1558,7 @@ function initShaderControls() {
   const copyStageBtn = document.getElementById('copyStageShaderBtn');
   const copyPillarsBtn = document.getElementById('copyPillarsShaderBtn');
   const copyFloorBtn = document.getElementById('copyFloorShaderBtn');
+  const copyCrowdBtn = document.getElementById('copyCrowdShaderBtn');
 
   if (copyBaseBtn) {
     copyBaseBtn.addEventListener('click', () => copyShaderValues('base'));
@@ -1463,10 +1575,13 @@ function initShaderControls() {
   if (copyFloorBtn) {
     copyFloorBtn.addEventListener('click', () => copyShaderValues('floor'));
   }
+  if (copyCrowdBtn) {
+    copyCrowdBtn.addEventListener('click', () => copyShaderValues('crowd'));
+  }
 
   // Copy all shader values function
   function copyAllShaderValues() {
-    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor'];
+    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor', 'crowd'];
     const allValues = {};
     
     shaderTypes.forEach(shaderType => {
@@ -3983,6 +4098,19 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Prevent scaling issues on orientation change
+window.addEventListener('orientationchange', () => {
+  // Force viewport recalculation after orientation change
+  setTimeout(() => {
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (viewport) {
+      viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+    }
+    // Trigger resize to ensure proper layout
+    window.dispatchEvent(new Event('resize'));
+  }, 100);
 });
 
 // Start the animation loop

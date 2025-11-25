@@ -96,6 +96,10 @@ body {
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 canvas {
@@ -638,6 +642,8 @@ canvas {
     flex-direction: column;
     gap: var(--space-md);
     align-items: center;
+    width: 100%;
+    max-height: none;
 }
 
 /* File Info Display at Top Center */
@@ -791,22 +797,107 @@ canvas {
         min-width: auto;
         width: calc(100vw - var(--space-xl) * 2);
         padding: var(--space-md) var(--space-lg);
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+    
+    .playback-menu-content {
+        max-height: none;
+        min-height: auto;
+        height: auto;
     }
     
     .playback-menu-controls {
         flex-direction: column;
         gap: var(--space-md);
+        width: 100%;
+    }
+    
+    .playback-transport {
+        width: 100%;
+        flex: none;
     }
     
     .playback-volume {
         width: 100%;
         justify-content: center;
         min-width: auto;
+        flex: none;
     }
     
     .slider-volume {
         flex: 1;
         max-width: 200px;
+    }
+    
+    /* Fix button stretching in portrait mode */
+    .btn {
+        width: auto;
+        min-width: auto;
+        max-width: 100%;
+        flex-shrink: 0;
+    }
+    
+    .playback-btn {
+        flex-shrink: 0;
+        min-width: var(--button-height-md);
+        max-width: var(--button-height-md);
+    }
+    
+    .playback-btn-primary {
+        min-width: var(--button-height-lg);
+        max-width: var(--button-height-lg);
+    }
+    
+    .playback-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .playback-transport {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-md);
+        flex-wrap: wrap;
+    }
+}
+
+/* Portrait mode specific fixes */
+@media (max-width: 768px) and (orientation: portrait) {
+    .btn {
+        width: auto !important;
+        min-width: auto !important;
+        max-width: none !important;
+        flex-shrink: 0;
+    }
+    
+    .playback-btn {
+        width: var(--button-height-md) !important;
+        height: var(--button-height-md) !important;
+        min-width: var(--button-height-md) !important;
+        max-width: var(--button-height-md) !important;
+        flex-shrink: 0;
+    }
+    
+    .playback-btn-primary {
+        width: var(--button-height-lg) !important;
+        height: var(--button-height-lg) !important;
+        min-width: var(--button-height-lg) !important;
+        max-width: var(--button-height-lg) !important;
+        flex-shrink: 0;
+    }
+    
+    .playback-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: var(--space-sm);
+    }
+    
+    .playback-transport {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: var(--space-sm);
     }
 }
 
