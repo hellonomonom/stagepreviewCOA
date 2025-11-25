@@ -96,6 +96,10 @@ let ledFrontMesh = null;
 let slWingMesh = null;
 let srWingMesh = null;
 
+// Store references to garage meshes
+let slGarageMesh = null;
+let srGarageMesh = null;
+
 // Store reference to floor mesh
 let floorMesh = null;
 
@@ -417,6 +421,14 @@ function loadMesh(path, targetGroup, isStage = false) {
         if (path.includes('SR_WING')) {
           srWingMesh = model;
         }
+        
+        // Store references to garage meshes
+        if (path.includes('SL_GARAGE')) {
+          slGarageMesh = model;
+        }
+        if (path.includes('SR_GARAGE')) {
+          srGarageMesh = model;
+        }
       }
       
       if (isStage) {
@@ -586,6 +598,8 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
   ledFrontMesh = null;
   slWingMesh = null;
   srWingMesh = null;
+  slGarageMesh = null;
+  srGarageMesh = null;
   
   // Get paths and replace wing meshes if corrected is enabled
   let paths = [...ledMeshFiles[mappingType]];
@@ -620,6 +634,14 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
   paths.forEach(path => {
     loadMesh(path, ledsGroup, false);
   });
+  
+  // Restore black material state if checkbox is checked
+  setTimeout(() => {
+    const blackGaragesCheckbox = document.getElementById('blackGarages');
+    if (blackGaragesCheckbox && blackGaragesCheckbox.checked) {
+      applyBlackToGarages(true);
+    }
+  }, 100);
 }
 
 // Load initial LED meshes (Front Projection by default)
@@ -3086,8 +3108,40 @@ if (copyBackgroundColorBtn) {
 // Checkbox to toggle mapping visibility
 const showMappingCheckbox = document.getElementById('showMapping');
 const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+const blackGaragesCheckbox = document.getElementById('blackGarages');
 const djDeckHeightSlider = document.getElementById('djDeckHeightSlider');
 const djDeckHeightValue = document.getElementById('djDeckHeightValue');
+
+// Create a black material for garage meshes
+const blackMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+// Function to apply black material to garage meshes
+function applyBlackToGarages(apply) {
+  const garageMeshes = [slGarageMesh, srGarageMesh];
+  
+  garageMeshes.forEach((garageMesh) => {
+    if (!garageMesh) return;
+    
+    garageMesh.traverse((child) => {
+      if (child.isMesh) {
+        if (apply) {
+          // Store original material if not already stored
+          if (!child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material;
+          }
+          // Apply black material
+          child.material = blackMaterial;
+        } else {
+          // Restore original material if available
+          if (child.userData.originalMaterial) {
+            child.material = child.userData.originalMaterial;
+            child.userData.originalMaterial = null;
+          }
+        }
+      }
+    });
+  });
+}
 
 // Handle hide LED front checkbox
 hideLedFrontCheckbox.addEventListener('change', (e) => {
@@ -3095,6 +3149,13 @@ hideLedFrontCheckbox.addEventListener('change', (e) => {
     ledFrontMesh.visible = !e.target.checked;
   }
 });
+
+// Handle black garages checkbox
+if (blackGaragesCheckbox) {
+  blackGaragesCheckbox.addEventListener('change', (e) => {
+    applyBlackToGarages(e.target.checked);
+  });
+}
 
 // Handle DJ deck height slider
 djDeckHeightSlider.addEventListener('input', (e) => {
