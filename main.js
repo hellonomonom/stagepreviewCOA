@@ -731,6 +731,123 @@ setTimeout(() => {
   }
 }, 0);
 
+// Texture scale slider handler
+const textureScaleSlider = document.getElementById('textureScaleSlider');
+const textureScaleValue = document.getElementById('textureScaleValue');
+
+if (textureScaleSlider && textureScaleValue) {
+  textureScaleSlider.addEventListener('input', (e) => {
+    const scale = parseFloat(e.target.value);
+    textureScaleValue.textContent = scale.toFixed(2);
+    
+    // Update texture scale uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureScale) {
+      material.uniforms.uTextureScale.value = scale;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture scale in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
+// Texture offset U slider handler
+const textureOffsetUSlider = document.getElementById('textureOffsetUSlider');
+const textureOffsetUValue = document.getElementById('textureOffsetUValue');
+
+if (textureOffsetUSlider && textureOffsetUValue) {
+  textureOffsetUSlider.addEventListener('input', (e) => {
+    const offset = parseFloat(e.target.value);
+    textureOffsetUValue.textContent = offset.toFixed(2);
+    
+    // Update texture offset U uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureOffsetU) {
+      material.uniforms.uTextureOffsetU.value = offset;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture offset U in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
+// Texture offset V slider handler
+const textureOffsetVSlider = document.getElementById('textureOffsetVSlider');
+const textureOffsetVValue = document.getElementById('textureOffsetVValue');
+
+if (textureOffsetVSlider && textureOffsetVValue) {
+  textureOffsetVSlider.addEventListener('input', (e) => {
+    const offset = parseFloat(e.target.value);
+    textureOffsetVValue.textContent = offset.toFixed(2);
+    
+    // Update texture offset V uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureOffsetV) {
+      material.uniforms.uTextureOffsetV.value = offset;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture offset V in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
+// Texture scale reset button handler
+const textureScaleResetBtn = document.getElementById('textureScaleResetBtn');
+if (textureScaleResetBtn && textureScaleSlider && textureScaleValue) {
+  textureScaleResetBtn.addEventListener('click', () => {
+    const defaultValue = 1.0;
+    textureScaleSlider.value = defaultValue;
+    textureScaleValue.textContent = defaultValue.toFixed(2);
+    
+    // Update texture scale uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureScale) {
+      material.uniforms.uTextureScale.value = defaultValue;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture scale in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
+// Texture offset U reset button handler
+const textureOffsetUResetBtn = document.getElementById('textureOffsetUResetBtn');
+if (textureOffsetUResetBtn && textureOffsetUSlider && textureOffsetUValue) {
+  textureOffsetUResetBtn.addEventListener('click', () => {
+    const defaultValue = 0.0;
+    textureOffsetUSlider.value = defaultValue;
+    textureOffsetUValue.textContent = defaultValue.toFixed(2);
+    
+    // Update texture offset U uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureOffsetU) {
+      material.uniforms.uTextureOffsetU.value = defaultValue;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture offset U in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
+// Texture offset V reset button handler
+const textureOffsetVResetBtn = document.getElementById('textureOffsetVResetBtn');
+if (textureOffsetVResetBtn && textureOffsetVSlider && textureOffsetVValue) {
+  textureOffsetVResetBtn.addEventListener('click', () => {
+    const defaultValue = 0.0;
+    textureOffsetVSlider.value = defaultValue;
+    textureOffsetVValue.textContent = defaultValue.toFixed(2);
+    
+    // Update texture offset V uniform in the main material
+    if (material && material.uniforms && material.uniforms.uTextureOffsetV) {
+      material.uniforms.uTextureOffsetV.value = defaultValue;
+      material.needsUpdate = true;
+    }
+    
+    // Update texture offset V in all LED shaders
+    updateLEDShaders(ledsGroup, material);
+  });
+}
+
 // Function to fetch and display available NDI streams
 async function discoverNDIStreams() {
   // Add cache-busting parameter to ensure fresh data

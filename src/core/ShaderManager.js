@@ -60,7 +60,10 @@ export function createTextureShaderMaterial() {
     uniforms: {
       uTexture: { value: null },
       uHasTexture: { value: 0.0 },
-      uIsImageTexture: { value: 0.0 }
+      uIsImageTexture: { value: 0.0 },
+      uTextureScale: { value: 1.0 },
+      uTextureOffsetU: { value: 0.0 },
+      uTextureOffsetV: { value: 0.0 }
     },
     vertexShader: textureVertexShader,
     fragmentShader: textureFragmentShader,
@@ -78,7 +81,10 @@ export function createLEDShaderMaterial(textureMaterial) {
     uniforms: {
       uTexture: { value: textureMaterial.uniforms.uTexture.value },
       uHasTexture: { value: textureMaterial.uniforms.uHasTexture.value },
-      uIsImageTexture: { value: textureMaterial.uniforms.uIsImageTexture.value }
+      uIsImageTexture: { value: textureMaterial.uniforms.uIsImageTexture.value },
+      uTextureScale: { value: textureMaterial.uniforms.uTextureScale.value },
+      uTextureOffsetU: { value: textureMaterial.uniforms.uTextureOffsetU.value },
+      uTextureOffsetV: { value: textureMaterial.uniforms.uTextureOffsetV.value }
     },
     vertexShader: ledVertexShader,
     fragmentShader: ledFragmentShader,
@@ -95,6 +101,9 @@ export function updateLEDShaders(ledsGroup, textureMaterial) {
   const videoTexture = textureMaterial.uniforms.uTexture.value;
   const hasTexture = textureMaterial.uniforms.uHasTexture.value;
   const isImageTexture = textureMaterial.uniforms.uIsImageTexture.value;
+  const textureScale = textureMaterial.uniforms.uTextureScale.value;
+  const textureOffsetU = textureMaterial.uniforms.uTextureOffsetU.value;
+  const textureOffsetV = textureMaterial.uniforms.uTextureOffsetV.value;
   
   ledsGroup.traverse((child) => {
     if (child.isMesh && child.material && child.material.uniforms) {
@@ -102,6 +111,9 @@ export function updateLEDShaders(ledsGroup, textureMaterial) {
       child.material.uniforms.uTexture.value = videoTexture;
       child.material.uniforms.uHasTexture.value = hasTexture;
       child.material.uniforms.uIsImageTexture.value = isImageTexture;
+      child.material.uniforms.uTextureScale.value = textureScale;
+      child.material.uniforms.uTextureOffsetU.value = textureOffsetU;
+      child.material.uniforms.uTextureOffsetV.value = textureOffsetV;
       child.material.needsUpdate = true;
     }
   });

@@ -20,6 +20,9 @@ export const textureFragmentShader = `
   uniform sampler2D uTexture;
   uniform float uHasTexture;
   uniform float uIsImageTexture;
+  uniform float uTextureScale;
+  uniform float uTextureOffsetU;
+  uniform float uTextureOffsetV;
   varying vec2 vUv;
   varying vec3 vNormal;
   
@@ -31,9 +34,18 @@ export const textureFragmentShader = `
     } else {
       // Front side shows texture or white
       if (uHasTexture > 0.5) {
-        vec4 texColor = texture2D(uTexture, vUv);
-        // Use texture directly for both images and videos
-        gl_FragColor = vec4(texColor.rgb, texColor.a);
+        // Scale UV coordinates from center (0.5, 0.5) - inverted: >1 zooms out, <1 zooms in
+        vec2 scaledUv = (vUv - 0.5) / uTextureScale + 0.5;
+        // Apply offset (U offset is inverted)
+        vec2 offsetUv = scaledUv + vec2(-uTextureOffsetU, uTextureOffsetV);
+        // Check if UVs are outside bounds - show black if outside
+        if (offsetUv.x < 0.0 || offsetUv.x > 1.0 || offsetUv.y < 0.0 || offsetUv.y > 1.0) {
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        } else {
+          vec4 texColor = texture2D(uTexture, offsetUv);
+          // Use texture directly for both images and videos
+          gl_FragColor = vec4(texColor.rgb, texColor.a);
+        }
       } else {
         gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
       }
