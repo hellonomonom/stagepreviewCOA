@@ -28,6 +28,14 @@ export default defineConfig({
     fs: {
       // Allow serving files from outside the project root
       allow: ['..']
+    },
+    // Proxy API requests to backend server
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false
+      }
     }
   },
   // Use cache directory outside Dropbox to avoid file locking issues

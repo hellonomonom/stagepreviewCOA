@@ -1,6 +1,20 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes } from './src/config/meshPaths.js';
+import { shaderConfigs } from './src/config/shaderConfig.js';
+import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from './src/config/cameraPresets.js';
+import { createShaderMaterials, createTextureShaderMaterial, createLEDShaderMaterial, updateLEDShaders, applyShaderToGroup, updateCameraPositionInShaders } from './src/core/ShaderManager.js';
+import { getShaderType } from './src/utils/shaderUtils.js';
+import { getElement } from './src/utils/domUtils.js';
+import { PlaybackControls, setupKeyboardControls } from './src/ui/PlaybackControls.js';
+import { CameraControls } from './src/ui/CameraControls.js';
+import { SettingsPanel } from './src/ui/SettingsPanel.js';
+import { PanelManager } from './src/ui/PanelManager.js';
+import { ShaderControls } from './src/ui/ShaderControls.js';
+import { MeshLoader } from './src/core/MeshLoader.js';
+import { LEDMapping } from './src/features/LEDMapping.js';
+import { CrowdSpawner } from './src/features/CrowdSpawner.js';
+import { MediaManager } from './src/features/MediaManager.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -35,50 +49,7 @@ controls.target.set(0, 0, 0);
 // Note: Default camera position will be set after cameraPositions array is defined
 
 // Create material with custom shader (used for texture management, referenced by LED shaders)
-const material = new THREE.ShaderMaterial({
-  uniforms: {
-    uTexture: { value: null },
-    uHasTexture: { value: 0.0 },
-    uIsImageTexture: { value: 0.0 }
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    
-    void main() {
-      vUv = uv;
-      vNormal = normalize(normalMatrix * normal);
-      vPosition = position;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D uTexture;
-    uniform float uHasTexture;
-    uniform float uIsImageTexture;
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    
-    void main() {
-      // Check if this is the back face
-      if (!gl_FrontFacing) {
-        // Backside is black
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-      } else {
-        // Front side shows texture or white
-        if (uHasTexture > 0.5) {
-          vec4 texColor = texture2D(uTexture, vUv);
-          // Use texture directly for both images and videos
-          gl_FragColor = vec4(texColor.rgb, texColor.a);
-        } else {
-          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-        }
-      }
-    }
-  `,
-  side: THREE.DoubleSide
-});
+const material = createTextureShaderMaterial();
 
 // Create groups for organizing meshes
 const ledsGroup = new THREE.Group();
@@ -114,109 +85,8 @@ const loadedLEDMeshes = [];
 scene.add(ledsGroup);
 scene.add(stageGroup);
 
-// GLTF Loader
-const gltfLoader = new GLTFLoader();
-
-// Shader material factory function with PBR properties
-function createPBRShaderMaterial(defaultBaseColor = [0.8, 0.8, 0.8], defaultRoughness = 0.5, defaultSpecular = 0.5) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uBaseColor: { value: new THREE.Vector3(...defaultBaseColor) },
-      uRoughness: { value: defaultRoughness },
-      uSpecular: { value: defaultSpecular },
-      uCameraPosition: { value: new THREE.Vector3() }
-    },
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec2 vUv;
-      varying vec3 vWorldPosition;
-    
-    void main() {
-      vUv = uv;
-      vNormal = normalize(normalMatrix * normal);
-      vPosition = position;
-        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-      uniform vec3 uBaseColor;
-      uniform float uRoughness;
-      uniform float uSpecular;
-      uniform vec3 uCameraPosition;
-      
-    varying vec3 vNormal;
-    varying vec3 vPosition;
-    varying vec2 vUv;
-      varying vec3 vWorldPosition;
-    
-    void main() {
-        vec3 normal = normalize(vNormal);
-        
-        // Calculate view direction from world position to camera
-        vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
-        
-      // Simple lighting calculation
-      vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-        float NdotL = max(dot(normal, lightDir), 0.0);
-        
-        // Ambient light
-        vec3 ambient = uBaseColor * 0.3;
-        
-        // Diffuse lighting
-        vec3 diffuse = uBaseColor * NdotL * 0.7;
-        
-        // Specular highlight
-        vec3 halfDir = normalize(lightDir + viewDir);
-        float NdotH = max(dot(normal, halfDir), 0.0);
-        float specPower = mix(1.0, 256.0, 1.0 - uRoughness);
-        vec3 specular = vec3(pow(NdotH, specPower)) * uSpecular;
-        
-        // Combine
-        vec3 finalColor = ambient + diffuse + specular;
-        
-        gl_FragColor = vec4(finalColor, 1.0);
-    }
-  `,
-  side: THREE.DoubleSide
-});
-}
-
-// Create shader materials for different asset types
-const shaderMaterials = {
-  base: createPBRShaderMaterial([0.161, 0.161, 0.161], 0.000, 0.013),
-  artists: createPBRShaderMaterial([0.733, 0.729, 0.749], 0.000, 0.500),
-  stage: createPBRShaderMaterial([0.231, 0.231, 0.231], 0.700, 0.200),
-  pillars: createPBRShaderMaterial([0.420, 0.420, 0.420], 1.000, 0.211),
-  floor: createPBRShaderMaterial([0.102, 0.102, 0.102], 0.900, 0.000),
-  crowd: createPBRShaderMaterial([0.5, 0.5, 0.5], 0.500, 0.300)
-};
-
-// Update all shader materials to ensure correct values
-shaderMaterials.base.uniforms.uBaseColor.value.set(0.161, 0.161, 0.161);
-shaderMaterials.base.uniforms.uRoughness.value = 0.000;
-shaderMaterials.base.uniforms.uSpecular.value = 0.013;
-
-shaderMaterials.artists.uniforms.uBaseColor.value.set(0.733, 0.729, 0.749);
-shaderMaterials.artists.uniforms.uRoughness.value = 0.000;
-shaderMaterials.artists.uniforms.uSpecular.value = 0.500;
-
-shaderMaterials.stage.uniforms.uBaseColor.value.set(0.231, 0.231, 0.231);
-shaderMaterials.stage.uniforms.uRoughness.value = 0.700;
-shaderMaterials.stage.uniforms.uSpecular.value = 0.200;
-
-shaderMaterials.pillars.uniforms.uBaseColor.value.set(0.420, 0.420, 0.420);
-shaderMaterials.pillars.uniforms.uRoughness.value = 1.000;
-shaderMaterials.pillars.uniforms.uSpecular.value = 0.211;
-
-shaderMaterials.floor.uniforms.uBaseColor.value.set(0.102, 0.102, 0.102);
-shaderMaterials.floor.uniforms.uRoughness.value = 0.900;
-shaderMaterials.floor.uniforms.uSpecular.value = 0.000;
-
-shaderMaterials.crowd.uniforms.uBaseColor.value.set(0.5, 0.5, 0.5);
-shaderMaterials.crowd.uniforms.uRoughness.value = 0.500;
-shaderMaterials.crowd.uniforms.uSpecular.value = 0.300;
+// Create shader materials for different asset types using config
+const shaderMaterials = createShaderMaterials();
 
 // Store references to all materials for UI control
 const materialReferences = {
@@ -231,417 +101,111 @@ const materialReferences = {
 // Double-sided shader material for stage meshes (legacy, kept for backwards compatibility)
 const stageShaderMaterial = shaderMaterials.stage;
 
-// Shader material for LED meshes that uses the video texture
-function createLEDShaderMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uTexture: { value: material.uniforms.uTexture.value }, // Reference to the video texture
-      uHasTexture: { value: material.uniforms.uHasTexture.value },
-      uIsImageTexture: { value: material.uniforms.uIsImageTexture.value }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      
-      void main() {
-        vUv = uv;
-        vNormal = normalize(normalMatrix * normal);
-        vPosition = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D uTexture;
-      uniform float uHasTexture;
-      uniform float uIsImageTexture;
-      varying vec2 vUv;
-      varying vec3 vNormal;
-      
-      void main() {
-        // Check if this is the back face
-        if (!gl_FrontFacing) {
-          // Backside is black
-          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-        } else {
-          // Front side shows texture or white
-          if (uHasTexture > 0.5) {
-            // Invert V coordinate
-            vec2 invertedUv = vec2(vUv.x, 1.0 - vUv.y);
-            vec4 texColor = texture2D(uTexture, invertedUv);
-            // Use texture directly for both images and videos
-            gl_FragColor = vec4(texColor.rgb, texColor.a);
-          } else {
-            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-          }
-        }
-      }
-    `,
-    side: THREE.DoubleSide
-  });
-}
+// Initialize Mesh Loader
+let meshLoader = new MeshLoader(scene, shaderMaterials, materialReferences, createLEDShaderMaterial);
 
-// Function to update LED shader textures when video texture changes
-function updateLEDShaders() {
-  const videoTexture = material.uniforms.uTexture.value;
-  const hasTexture = material.uniforms.uHasTexture.value;
-  const isImageTexture = material.uniforms.uIsImageTexture.value;
-  
-  ledsGroup.traverse((child) => {
-    if (child.isMesh && child.material && child.material.uniforms) {
-      // Update the texture reference in LED shader
-      child.material.uniforms.uTexture.value = videoTexture;
-      child.material.uniforms.uHasTexture.value = hasTexture;
-      child.material.uniforms.uIsImageTexture.value = isImageTexture;
-      child.material.needsUpdate = true;
-    }
-  });
-}
-
-// Function to apply shader to all meshes in a group
-function applyShaderToGroup(group, shaderMaterial) {
-  group.traverse((child) => {
-    if (child.isMesh) {
-      // Store original material if needed
-      if (!child.userData.originalMaterial) {
-        child.userData.originalMaterial = child.material;
+// Set up mesh loader callbacks for stage meshes
+meshLoader.setCallbacks({
+  onDJLiftableLoaded: (mesh) => {
+    djLiftableMesh = mesh;
+    console.log('DJ liftable mesh loaded');
+    // If DJ artist mesh is already loaded, parent it to the liftable stage
+    if (djArtistMesh) {
+      if (djArtistMesh.parent) {
+        djArtistMesh.parent.remove(djArtistMesh);
       }
-      child.material = shaderMaterial.clone();
+      djLiftableMesh.add(djArtistMesh);
+      console.log('Parented DJ artist mesh to liftable stage');
     }
-  });
-}
+  },
+  onFloorLoaded: (mesh) => {
+    floorMesh = mesh;
+    console.log('Floor mesh loaded');
+    // Initialize crowd spawner when floor is loaded
+    if (!crowdSpawner) {
+      crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
+    } else {
+      crowdSpawner.setFloorMesh(floorMesh);
+    }
+    // Spawn crowd cubes on the floor after a short delay
+    setTimeout(() => {
+      if (crowdSpawner) {
+        const slider = document.getElementById('crowdInstanceCountSlider');
+        const count = slider ? parseInt(slider.value) || 4000 : 4000;
+        crowdSpawner.spawnCrowd(count);
+      }
+    }, 100);
+  },
+  onArtistsLoaded: (mesh) => {
+    artistsMeshes.push({
+      mesh: mesh,
+      name: mesh.name || 'Unnamed',
+      parent: mesh.parent
+    });
+    console.log(`Stored artists mesh: ${mesh.name || 'Unnamed'}`);
+  },
+  onDJArtistLoaded: (mesh) => {
+    djArtistMesh = mesh;
+    console.log(`Found DJ artist mesh: ${mesh.name}`);
+    // Explicitly ensure DJ artist mesh gets the artists shader
+    const artistsMaterial = shaderMaterials.artists.clone();
+    mesh.material = artistsMaterial;
+    if (!materialReferences.artists) {
+      materialReferences.artists = [];
+    }
+    materialReferences.artists.push(artistsMaterial);
+    // Parent DJ artist mesh to liftable stage if it's already loaded
+    if (djLiftableMesh) {
+      if (mesh.parent) {
+        mesh.parent.remove(mesh);
+      }
+      djLiftableMesh.add(mesh);
+      console.log('Parented DJ artist mesh to liftable stage');
+    }
+  }
+});
+
+// Initialize LED Mapping
+let ledMapping = new LEDMapping(meshLoader, ledsGroup, material, (apply) => {
+  applyBlackToGarages(apply);
+});
+
+// Initialize Crowd Spawner (will be set when floor loads)
+let crowdSpawner = null;
 
 // LED mesh file paths for different mapping types
-const ledMeshFiles = {
-  festival: [
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v007_LED_FRONT.glb',
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v007_LED_SL_GARAGE.glb',
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SL_WING.glb',
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SR_GARAGE.glb',
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_SR_WING.glb',
-    '/assets/meshes/FestivalMapping/ANYMA_Coachella_Stage_v008_LED_US_WALL.glb'
-  ],
-  frontProjection: [
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v013_LED_FRONT_ortho.glb',
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SL_GARAGE_FrontP.glb',
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SL_WING_FrontP.glb',
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SR_GARAGE_FrontP.glb',
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_SR_WING_FrontP.glb',
-    '/assets/meshes/FrontProjection_ortho/ANYMA_Coachella_Stage_v010_LED_US_WALL_FrontP.glb'
-  ],
-  frontProjectionPerspective: [
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_FRONT_Perspective.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_GARAGE.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SL_WING.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_GARAGE.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_WING.glb',
-    '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_US_WALL.glb'
-  ]
-};
-
 // Current mapping type (default to frontProjectionPerspective)
-let currentMappingType = 'frontProjectionPerspective';
+let currentMappingType = DEFAULT_MAPPING_TYPE;
 
 // Mesh file paths organized by category
 const meshFiles = {
   leds: ledMeshFiles[currentMappingType],
-  stage: [
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_CATWALK.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_PILLARS.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_CROWD.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_DJ_LIFTABLE.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_GROUND.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v010_STAGE_ARTISTS.glb',
-    '/assets/meshes/ANYMA_Coachella_Stage_v010_FLOOR.glb'
-  ]
+  stage: stageMeshFiles
 };
 
-// Function to determine which shader type to use based on filename
-function getShaderType(path) {
-  const lowerPath = path.toLowerCase();
-  
-  // Artists shader - check first to ensure artist meshes get correct shader
-  if (lowerPath.includes('artists')) {
-    return 'artists';
-  }
-  
-  // Crowd shader - check for crowd folder/meshes (before general crowd check)
-  if (lowerPath.includes('crowd/') || (lowerPath.includes('crowd') && lowerPath.includes('.glb') && !lowerPath.includes('stage_crowd'))) {
-    return 'crowd';
-  }
-  
-  // Stage shader: LIFTABLE (including DJ_LIFTABLE), CROWD - check before stage_dj
-  if (lowerPath.includes('liftable') || lowerPath.includes('crowd')) {
-    return 'stage';
-  }
-  
-  // Base shader: CATWALK, STAGE_GROUND, STAGE_DJ (but not LIFTABLE)
-  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground') || lowerPath.includes('stage_dj')) {
-    return 'base';
-  }
-  
-  // Pillars shader
-  if (lowerPath.includes('pillars')) {
-    return 'pillars';
-  }
-  
-  // Floor shader
-  if (lowerPath.includes('floor')) {
-    return 'floor';
-  }
-  
-  // Default to stage shader for other stage meshes
-  return 'stage';
-}
+// getShaderType is imported from utils
 
-// Function to load a single mesh
+// Function to load a single mesh (wrapper for MeshLoader)
 function loadMesh(path, targetGroup, isStage = false) {
-  gltfLoader.load(
-    path,
-    (gltf) => {
-      const model = gltf.scene;
-      model.userData.path = path; // Store path for identification
-      targetGroup.add(model);
-      
-      // Store reference to LED mesh if it's an LED mesh
-      if (!isStage && targetGroup === ledsGroup) {
-        loadedLEDMeshes.push(model);
-        
-        // Store reference to LED front mesh (check for both FRONT and Front naming)
-        if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
-          ledFrontMesh = model;
-          // Immediately restore visibility state to prevent flash
-          ledFrontMesh.visible = restoreLedFrontVisible;
-        }
-        
-        // Store references to wing meshes
-        if (path.includes('SL_WING')) {
-          slWingMesh = model;
-        }
-        if (path.includes('SR_WING')) {
-          srWingMesh = model;
-        }
-        
-        // Store references to garage meshes
-        if (path.includes('SL_GARAGE')) {
-          slGarageMesh = model;
-        }
-        if (path.includes('SR_GARAGE')) {
-          srGarageMesh = model;
-        }
-      }
-      
-      if (isStage) {
-        // Store reference to DJ liftable mesh
-        if (path.includes('STAGE_DJ_LIFTABLE') || path.includes('Stage_DJ_Liftable')) {
-          djLiftableMesh = model;
-          console.log('DJ liftable mesh loaded');
-          
-          // If DJ artist mesh is already loaded, parent it to the liftable stage
-          if (djArtistMesh) {
-            // Remove from current parent
-            if (djArtistMesh.parent) {
-              djArtistMesh.parent.remove(djArtistMesh);
-            }
-            // Add to liftable stage mesh
-            djLiftableMesh.add(djArtistMesh);
-            console.log('Parented DJ artist mesh to liftable stage');
-          }
-        }
-        
-        // Store reference to floor mesh
-        if (path.includes('FLOOR') || path.includes('Floor') || path.includes('floor')) {
-          floorMesh = model;
-          console.log('Floor mesh loaded');
-          
-          // Spawn crowd cubes on the floor after a short delay to ensure mesh is fully loaded
-          setTimeout(() => {
-            spawnCrowdCubes();
-          }, 100);
-        }
-        
-        // Store individual meshes from artists model for individual control
-        if (path.includes('ARTISTS') || path.includes('Artists') || path.includes('artists')) {
-          model.traverse((child) => {
-            if (child.isMesh) {
-              artistsMeshes.push({
-                mesh: child,
-                name: child.name || 'Unnamed',
-                parent: child.parent
-              });
-              console.log(`Stored artists mesh: ${child.name || 'Unnamed'} (parent: ${child.parent?.name || 'root'})`);
-              
-              // Store reference to DJ artist mesh
-              if (child.name && (child.name.includes('DJ') || child.name.includes('dj'))) {
-                djArtistMesh = child;
-                console.log(`Found DJ artist mesh: ${child.name}`);
-                
-                // Explicitly ensure DJ artist mesh gets the artists shader
-                const artistsMaterial = shaderMaterials.artists.clone();
-                child.material = artistsMaterial;
-                
-                // Store reference for UI control
-                if (!materialReferences.artists) {
-                  materialReferences.artists = [];
-                }
-                materialReferences.artists.push(artistsMaterial);
-                
-                // Parent DJ artist mesh to liftable stage if it's already loaded
-                if (djLiftableMesh) {
-                  // Remove from current parent
-                  if (child.parent) {
-                    child.parent.remove(child);
-                  }
-                  // Add to liftable stage mesh
-                  djLiftableMesh.add(child);
-                  console.log('Parented DJ artist mesh to liftable stage');
-                }
-              }
-            }
-          });
-        }
-        
-        // Determine shader type based on filename
-        const shaderType = getShaderType(path);
-        const shaderMaterial = shaderMaterials[shaderType];
-        
-        model.traverse((child) => {
-          if (child.isMesh) {
-            // Skip DJ artist mesh - it already has the artists shader applied
-            if (child === djArtistMesh) {
-              return;
-            }
-            
-            // Store original material if needed
-            if (!child.userData.originalMaterial) {
-              child.userData.originalMaterial = child.material;
-            }
-            
-            // Clone the shader material for this mesh
-            const clonedMaterial = shaderMaterial.clone();
-            child.material = clonedMaterial;
-            
-            // Store reference for UI control
-            if (!materialReferences[shaderType]) {
-              materialReferences[shaderType] = [];
-            }
-            materialReferences[shaderType].push(clonedMaterial);
-          }
-        });
-        
-        // Ensure DJ artist mesh always has artists shader after all operations
-        if (djArtistMesh && path.includes('ARTISTS')) {
-          const artistsMaterial = shaderMaterials.artists.clone();
-          djArtistMesh.material = artistsMaterial;
-          
-          // Update material reference
-          if (!materialReferences.artists) {
-            materialReferences.artists = [];
-          }
-          // Remove old reference if it exists and add new one
-          const existingIndex = materialReferences.artists.findIndex(m => m === djArtistMesh.material);
-          if (existingIndex === -1) {
-            materialReferences.artists.push(artistsMaterial);
-          }
-        }
-      } else {
-        // Apply LED shader to LED meshes
-        model.traverse((child) => {
-          if (child.isMesh) {
-            // Store original material if needed
-            if (!child.userData.originalMaterial) {
-              child.userData.originalMaterial = child.material;
-            }
-            child.material = createLEDShaderMaterial();
-          }
-        });
-      }
-      
-      console.log(`Loaded mesh: ${path}`);
-    },
-    (progress) => {
-      // Loading progress (optional)
-      if (progress.lengthComputable) {
-        const percentComplete = (progress.loaded / progress.total) * 100;
-        console.log(`Loading ${path}: ${percentComplete.toFixed(0)}%`);
-      }
-    },
-    (error) => {
-      console.error(`Error loading mesh ${path}:`, error);
-    }
-  );
+  if (!meshLoader) {
+    console.error('MeshLoader not initialized');
+    return;
+  }
+  meshLoader.loadMesh(path, targetGroup, isStage, material);
 }
 
-// Function to load LED meshes
+// Function to load LED meshes (wrapper for LEDMapping)
 function loadLEDMeshes(mappingType, useCorrected = false) {
-  // Store LED front visibility state before clearing (to prevent flash)
-  restoreLedFrontVisible = ledFrontMesh ? ledFrontMesh.visible : true;
-  
-  // Clear existing LED meshes
-  loadedLEDMeshes.forEach(mesh => {
-    ledsGroup.remove(mesh);
-    // Dispose of geometry and materials
-    mesh.traverse((child) => {
-      if (child.isMesh) {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => mat.dispose());
-          } else {
-            child.material.dispose();
-          }
-        }
-      }
-    });
-  });
-  loadedLEDMeshes.length = 0;
-  ledFrontMesh = null;
-  slWingMesh = null;
-  srWingMesh = null;
-  slGarageMesh = null;
-  srGarageMesh = null;
-  
-  // Get paths and replace wing meshes if corrected is enabled
-  let paths = [...ledMeshFiles[mappingType]];
-  
-  if (useCorrected && (mappingType === 'frontProjection' || mappingType === 'frontProjectionPerspective')) {
-    if (mappingType === 'frontProjection') {
-      // Replace SL_WING and SR_WING for Front Projection Orthogonal
-      paths = paths.map(path => {
-        if (path.includes('SL_WING_FrontP')) {
-          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SL_WING_CORR_ORTHO.glb';
-        }
-        if (path.includes('SR_WING_FrontP')) {
-          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_ORTHO.glb';
-        }
-        return path;
-      });
-    } else if (mappingType === 'frontProjectionPerspective') {
-      // Replace SL_WING and SR_WING for Front Projection Perspective
-      paths = paths.map(path => {
-        if (path.includes('SL_WING') && !path.includes('GARAGE')) {
-          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SL_WING_CORR_PERSP.glb';
-        }
-        if (path.includes('SR_WING') && !path.includes('GARAGE')) {
-          return '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb';
-        }
-        return path;
-      });
-    }
+  if (!ledMapping) {
+    console.error('LEDMapping not initialized');
+    return;
   }
-  
-  // Load new LED meshes
-  paths.forEach(path => {
-    loadMesh(path, ledsGroup, false);
-  });
-  
-  // Restore black material state if checkbox is checked
-  setTimeout(() => {
-    const blackGaragesCheckbox = document.getElementById('blackGarages');
-    if (blackGaragesCheckbox && blackGaragesCheckbox.checked) {
-      applyBlackToGarages(true);
-    }
-  }, 100);
+  ledMapping.loadLEDMeshes(mappingType, useCorrected);
+  // Update global references for backwards compatibility
+  ledFrontMesh = ledMapping.getLEDFrontMesh();
+  const garages = ledMapping.getGarageMeshes();
+  slGarageMesh = garages.sl;
+  srGarageMesh = garages.sr;
 }
 
 // Load initial LED meshes (Front Projection by default)
@@ -676,29 +240,6 @@ meshFiles.stage.forEach(path => {
   // Note: loadMesh is async, so we'll check after a delay
 });
 
-// After all meshes are loaded, respawn crowd instances to default value
-setTimeout(() => {
-  // Reset slider to default value (100)
-  const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
-  const crowdInstanceCountValue = document.getElementById('crowdInstanceCountValue');
-  
-  if (crowdInstanceCountSlider) {
-    crowdInstanceCountSlider.value = 100;
-    if (crowdInstanceCountValue) {
-      crowdInstanceCountValue.textContent = '100';
-    }
-    
-    // Respawn with default value
-    if (floorMesh && crowdMeshData.length > 0) {
-      console.log('Scene loaded, respawning crowd instances to default value (100)');
-      spawnCrowdInstances();
-    } else if (floorMesh) {
-      // Floor is loaded but crowd meshes might not be, trigger spawn which will load them
-      console.log('Scene loaded, triggering crowd spawn (will load meshes if needed)');
-      spawnCrowdCubes();
-    }
-  }
-}, 2000); // Wait 2 seconds for all meshes to load
 
 // Crowd spawning - individual crowd meshes on the floor mesh with random mesh selection
 let crowdInstances = null;
@@ -708,325 +249,45 @@ let crowdMaterial = null;
 
 // Store pre-loaded crowd mesh geometries and materials
 const crowdMeshData = []; // Array of {geometry, material} objects
-const crowdMeshPaths = [
-  '/assets/meshes/Crowd/crowd_v001_female1.glb',
-  '/assets/meshes/Crowd/crowd_v001_female2.glb',
-  '/assets/meshes/Crowd/crowd_v001_female3.glb',
-  '/assets/meshes/Crowd/crowd_v001_male1.glb',
-  '/assets/meshes/Crowd/crowd_v001_male2.glb'
-];
+// crowdMeshPaths is imported from config
 
-function spawnCrowdCubes() {
-  if (!floorMesh) {
-    console.warn('Floor mesh not available for crowd spawning');
-    return;
-  }
-  
-  console.log('Spawning crowd cubes, floorMesh:', floorMesh);
-
-  // Remove existing crowd instances if they exist - thorough cleanup
-  if (crowdInstances) {
-    // Remove from scene first
-    if (crowdInstances.parent) {
-      crowdInstances.parent.remove(crowdInstances);
-    }
-    scene.remove(crowdInstances);
-    
-    // Properly dispose of InstancedMesh
-    crowdInstances.dispose();
-    crowdInstances = null;
-  }
-  
-  // Also search scene for any remaining crowd instances by name (safety check)
-  scene.traverse((object) => {
-    if (object.name === 'CrowdInstances' && object !== crowdInstances) {
-      scene.remove(object);
-      if (object.dispose) {
-        object.dispose();
-      }
-    }
-  });
-  
-  // Remove individual meshes if they exist
-  crowdMeshes.forEach(mesh => {
-    if (mesh.parent) {
-      mesh.parent.remove(mesh);
-    }
-    scene.remove(mesh);
-    if (mesh.geometry) {
-      mesh.geometry.dispose();
-    }
-    if (mesh.material) {
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach(mat => mat.dispose());
-      } else {
-        mesh.material.dispose();
-      }
-    }
-  });
-  crowdMeshes = [];
-  console.log('Cleaned up old crowd meshes');
-  
-  // Pre-load all crowd meshes if not already loaded
-  if (crowdMeshData.length === 0) {
-    let loadedCount = 0;
-    const totalMeshes = crowdMeshPaths.length;
-    
-    crowdMeshPaths.forEach((path) => {
-      gltfLoader.load(
-        path,
-        (gltf) => {
-          const model = gltf.scene;
-          let foundGeometry = null;
-          let foundMaterial = null;
-          
-          model.traverse((child) => {
-            if (child.isMesh) {
-              if (!foundGeometry) {
-                foundGeometry = child.geometry;
-                foundMaterial = child.material;
-              }
-            }
-          });
-          
-          if (foundGeometry && foundMaterial) {
-            // Clone geometry to avoid sharing issues
-            const geometry = foundGeometry.clone();
-            
-            // Clone material and set color
-            const material = foundMaterial.clone();
-            if (material.color) {
-              material.color.setHex(0x1e1e1e);
-            } else if (material.uniforms && material.uniforms.diffuse) {
-              material.uniforms.diffuse.value.setHex(0x1e1e1e);
-            }
-            
-            crowdMeshData.push({
-              geometry: geometry,
-              material: material
-            });
-            
-            console.log(`Loaded crowd mesh ${path}, total loaded: ${crowdMeshData.length}`);
-          }
-          
-          loadedCount++;
-          console.log(`Crowd mesh loading progress: ${loadedCount}/${totalMeshes}, loaded meshes: ${crowdMeshData.length}`);
-          if (loadedCount === totalMeshes) {
-            // All meshes loaded, now spawn
-            console.log(`All ${crowdMeshData.length} crowd meshes loaded, spawning instances with randomization`);
-            spawnCrowdInstances();
-          }
-        },
-        (error) => {
-          console.error(`Error loading crowd mesh ${path}:`, error);
-          loadedCount++;
-          if (loadedCount === totalMeshes) {
-            // Even if some failed, try to spawn with what we have
-            if (crowdMeshData.length > 0) {
-              spawnCrowdInstances();
-            }
-          }
-        }
-      );
-    });
-  } else {
-    // Meshes already loaded, spawn directly
-    spawnCrowdInstances();
-  }
-}
-
-function spawnCrowdInstances() {
-  if (crowdMeshData.length === 0) {
-    console.error('No crowd mesh data available');
-    return;
-  }
-      
-  // Update floor mesh world matrix first
-  floorMesh.updateMatrixWorld(true);
-  
-  // Find the actual floor mesh (floorMesh might be a Group)
-  let actualFloorMesh = null;
-  if (floorMesh.isMesh) {
-    actualFloorMesh = floorMesh;
-  } else {
-    // If it's a Group, find the first mesh
-    floorMesh.traverse((child) => {
-      if (child.isMesh && !actualFloorMesh) {
-        actualFloorMesh = child;
-      }
-    });
-  }
-  
-  if (!actualFloorMesh) {
-    console.error('Could not find floor mesh geometry');
-    return;
-  }
-  
-  // Get floor mesh bounding box (using world matrix)
-  // Traverse all meshes in the floor group to get accurate bounding box
-  const box = new THREE.Box3();
-  const tempBox = new THREE.Box3();
-  let hasMesh = false;
-  
-  floorMesh.traverse((child) => {
-    if (child.isMesh) {
-      child.updateMatrixWorld(true);
-      tempBox.setFromObject(child);
-      if (!hasMesh) {
-        box.copy(tempBox);
-        hasMesh = true;
-      } else {
-        box.union(tempBox);
-      }
-    }
-  });
-  
-  if (!hasMesh) {
-    console.error('No meshes found in floor group');
-    return;
-  }
-  
-  const floorSize = box.getSize(new THREE.Vector3());
-  const floorCenter = box.getCenter(new THREE.Vector3());
-  const floorMin = box.min;
-  
-  console.log('Floor bounding box:', { floorSize, floorCenter, floorMin });
-  
-  // Validate bounding box
-  if (floorSize.x === 0 || floorSize.z === 0) {
-    console.error('Floor mesh has invalid bounding box:', floorSize);
-    return;
-  }
-  
-  // Get instance count from slider, default to 100
-  const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
-  const instanceCount = crowdInstanceCountSlider ? parseInt(crowdInstanceCountSlider.value) : 100;
-  
-  // If count is 0, just remove all instances and return
-  if (instanceCount === 0) {
-    if (crowdInstances) {
-      scene.remove(crowdInstances);
-      crowdInstances.dispose();
-      crowdInstances = null;
-    }
-    return;
-  }
-  
-  // Generate random positions on the floor mesh
-  // Keep some margin from the edges
-  const margin = 0.1; // 10% margin from edges
-  const xRange = floorSize.x * (1 - 2 * margin);
-  const zRange = floorSize.z * (1 - 2 * margin);
-  const xMin = floorCenter.x - xRange / 2;
-  const zMin = floorCenter.z - zRange / 2;
-  
-  const positions = [];
-  for (let i = 0; i < instanceCount; i++) {
-    positions.push({
-      x: xMin + Math.random() * xRange,
-      z: zMin + Math.random() * zRange
-    });
-  }
-
-  // Use raycaster to find the floor surface height at each position
-  const raycaster = new THREE.Raycaster();
-  const rayDirection = new THREE.Vector3(0, -1, 0);
-      
-  // Create individual meshes with random geometry selection for each position
-  positions.forEach((pos, index) => {
-    // Randomly select a crowd mesh - ensure we have meshes available
-    if (crowdMeshData.length === 0) {
-      console.error('No crowd mesh data available for spawning');
+// Function to spawn crowd (wrapper for CrowdSpawner)
+async function spawnCrowdCubes() {
+  if (!crowdSpawner) {
+    if (!floorMesh) {
+      console.warn('Floor mesh not available for crowd spawning');
       return;
     }
-    
-    const randomIndex = Math.floor(Math.random() * crowdMeshData.length);
-    const meshData = crowdMeshData[randomIndex];
-    
-    console.log(`Instance ${index}: Using mesh ${randomIndex} of ${crowdMeshData.length}`);
-    
-    // Start ray from above the floor
-    const rayOrigin = new THREE.Vector3(pos.x, floorMin.y + floorSize.y + 10, pos.z);
-    raycaster.set(rayOrigin, rayDirection);
-    
-    // Find intersection with floor mesh
-    const intersects = raycaster.intersectObject(floorMesh, true);
-    
-    // Create a temporary mesh to calculate bounding box
-    const tempMesh = new THREE.Mesh(meshData.geometry, meshData.material);
-    const meshBox = new THREE.Box3();
-    meshBox.setFromObject(tempMesh);
-    const meshMin = meshBox.min;
-    const meshSize = meshBox.getSize(new THREE.Vector3());
-    
-    let yPos = floorMin.y + floorSize.y * 0.5;
-    
-    if (intersects.length > 0) {
-      // Position crowd mesh on top of the floor surface
-      // Adjust for the mesh's base offset (meshMin.y is typically negative)
-      yPos = intersects[0].point.y - meshMin.y;
-    } else {
-      // Fallback: use bounding box top
-      yPos = floorMin.y + floorSize.y - meshMin.y;
-    }
-    
-    // Create a new mesh with the randomly selected geometry
-    // Clone geometry to ensure each mesh is independent
-    const clonedGeometry = meshData.geometry.clone();
-    
-    // Ensure geometry is properly computed
-    if (!clonedGeometry.boundingBox) {
-      clonedGeometry.computeBoundingBox();
-    }
-    
-    const clonedMaterial = meshData.material.clone();
-    
-    // Ensure material is properly set up
-    clonedMaterial.needsUpdate = true;
-    
-    const mesh = new THREE.Mesh(clonedGeometry, clonedMaterial);
-    mesh.position.set(pos.x, yPos, pos.z);
-    mesh.rotation.y = -Math.PI / 2; // 90 degrees clockwise
-    mesh.name = `CrowdInstance_${index}`;
-    
-    // Ensure mesh is visible and properly set up
-    mesh.visible = true;
-    mesh.frustumCulled = false; // Disable frustum culling to ensure visibility
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    
-    // Add to scene
-    scene.add(mesh);
-    crowdMeshes.push(mesh);
-    
-    if (index < 5) { // Only log first 5 to avoid spam
-      console.log(`Created mesh ${index} at position (${pos.x.toFixed(2)}, ${yPos.toFixed(2)}, ${pos.z.toFixed(2)}), geometry vertices: ${clonedGeometry.attributes.position.count}`);
-    }
-  });
-  
-  console.log(`Spawned ${instanceCount} crowd meshes on floor mesh with random mesh selection`);
-  console.log(`Total crowd meshes in array: ${crowdMeshes.length}`);
-  
-  // Verify meshes are in scene
-  const meshesInScene = [];
-  scene.traverse((object) => {
-    if (object.name && object.name.startsWith('CrowdInstance_')) {
-      meshesInScene.push(object.name);
-    }
-  });
-  console.log(`Meshes found in scene: ${meshesInScene.length}`, meshesInScene.slice(0, 10));
-  
-  // Check first mesh if it exists
-  if (crowdMeshes.length > 0) {
-    const firstMesh = crowdMeshes[0];
-    console.log('First mesh details:', {
-      position: firstMesh.position,
-      visible: firstMesh.visible,
-      geometry: firstMesh.geometry ? 'exists' : 'missing',
-      material: firstMesh.material ? 'exists' : 'missing',
-      inScene: scene.children.includes(firstMesh)
-    });
+    crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
   }
+  
+  const slider = document.getElementById('crowdInstanceCountSlider');
+  const instanceCount = slider ? parseInt(slider.value) || 4000 : 4000;
+  await crowdSpawner.spawnCrowd(instanceCount);
+}
+
+// Function to spawn crowd instances (wrapper for CrowdSpawner)
+function spawnCrowdInstances() {
+  if (!crowdSpawner) {
+    if (!floorMesh) {
+      console.error('No floor mesh available');
+      return;
+    }
+    crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials);
+  }
+  
+  const slider = document.getElementById('crowdInstanceCountSlider');
+  const instanceCount = slider ? parseInt(slider.value) || 4000 : 4000;
+  
+  if (instanceCount === 0) {
+    crowdSpawner.cleanup();
+    return;
+  }
+  
+  // Pre-load meshes if needed, then spawn
+  crowdSpawner.spawnCrowd(instanceCount).catch(err => {
+    console.error('Error spawning crowd:', err);
+  });
 }
 
 // Add lights - brighter and more neutral for accurate color display
@@ -1040,162 +301,57 @@ scene.add(directionalLight);
 
 // Texture loading
 const settingsPanel = document.getElementById('settingsPanel');
-const textureInput = document.getElementById('textureInput');
-const textureStatus = document.getElementById('textureStatus'); // May be null - element was removed
-
-// Make control panel draggable
-let isDragging = false;
-let isDraggingCamera = false;
-let isDraggingStyleShader = false;
-let isDraggingPlayback = false;
-let isDraggingFileInfo = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let panelStartX = 0;
-let panelStartY = 0;
 
 const cameraPanel = document.getElementById('cameraPanel');
 const styleShaderPanel = document.getElementById('styleShaderPanel');
 
-// Helper function to make panel draggable
-function makePanelDraggable(panel, dragStateVar) {
-  if (!panel) return;
-  
-  // Helper function to get client coordinates from mouse or touch event
-  function getClientCoords(e) {
-    if (e.touches && e.touches.length > 0) {
-      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    }
-    return { x: e.clientX, y: e.clientY };
-  }
-  
-  // Helper function to handle drag start
-  function handleDragStart(e) {
-    // Only start dragging if clicking on the panel background or labels (not interactive elements)
-    const target = e.target;
-    const isInteractive = target.tagName === 'INPUT' || 
-                         target.tagName === 'SELECT' || 
-                         target.tagName === 'BUTTON' ||
-                         (target.tagName === 'LABEL' && target.getAttribute('for'));
-    
-    if (!isInteractive && (target === panel || target.closest('.control-group label') || target.closest('.control-section-header') || target.closest('.playback-menu-content') || target.closest('.frame-info') || target.closest('.still-info'))) {
-      const coords = getClientCoords(e);
-      
-      if (dragStateVar === 'control') {
-        isDragging = true;
-      } else if (dragStateVar === 'camera') {
-        isDraggingCamera = true;
-      } else if (dragStateVar === 'styleShader') {
-        isDraggingStyleShader = true;
-      } else if (dragStateVar === 'playback') {
-        isDraggingPlayback = true;
-      } else if (dragStateVar === 'fileInfo') {
-        isDraggingFileInfo = true;
-      }
-      
-      dragStartX = coords.x;
-      dragStartY = coords.y;
-      
-      const rect = panel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      
-      panel.style.cursor = 'grabbing';
-      e.preventDefault();
-    }
-  }
-  
-  // Add both mouse and touch event listeners
-  panel.addEventListener('mousedown', handleDragStart);
-  panel.addEventListener('touchstart', handleDragStart, { passive: false });
-}
+// Initialize Settings Panel Manager
+const settingsPanelManager = new SettingsPanel();
 
-// Make control panel draggable
-makePanelDraggable(settingsPanel, 'control');
+// Initialize Panel Manager
+const panelManager = new PanelManager();
 
-// Make camera panel draggable
-makePanelDraggable(cameraPanel, 'camera');
+// Register draggable panels
+panelManager.registerPanel(settingsPanel, 'control');
+panelManager.registerPanel(cameraPanel, 'camera');
+panelManager.registerPanel(styleShaderPanel, 'styleShader');
 
-// Make combined style-shader panel draggable
-makePanelDraggable(styleShaderPanel, 'styleShader');
+// Style/Shader tab switching
+const styleTabBtn = getElement('styleTabBtn');
+const shaderTabBtn = getElement('shaderTabBtn');
+const styleTabPanel = getElement('styleTabPanel');
+const shaderTabPanel = getElement('shaderTabPanel');
 
-// Tab switching
-const styleTabBtn = document.getElementById('styleTabBtn');
-const shaderTabBtn = document.getElementById('shaderTabBtn');
-const styleTabPanel = document.getElementById('styleTabPanel');
-const shaderTabPanel = document.getElementById('shaderTabPanel');
-
-function switchTab(activeTabName) {
-  // Update buttons
-  styleTabBtn?.classList.toggle('active', activeTabName === 'style');
-  shaderTabBtn?.classList.toggle('active', activeTabName === 'shader');
-  
-  // Update panels
-  styleTabPanel?.classList.toggle('active', activeTabName === 'style');
-  shaderTabPanel?.classList.toggle('active', activeTabName === 'shader');
-}
-
-if (styleTabBtn) {
-  styleTabBtn.addEventListener('click', () => {
-    switchTab('style');
-  });
-}
-
-if (shaderTabBtn) {
-  shaderTabBtn.addEventListener('click', () => {
-    switchTab('shader');
-  });
-}
-
-// Initialize with Style tab active
-switchTab('style');
+panelManager.setupTabs({
+  tabs: [
+    { button: styleTabBtn, panel: styleTabPanel, name: 'style' },
+    { button: shaderTabBtn, panel: shaderTabPanel, name: 'shader' }
+  ],
+  defaultTab: 'style'
+});
 
 // Settings panel tab switching
-const mediaTabBtn = document.getElementById('mediaTabBtn');
-const mappingTabBtn = document.getElementById('mappingTabBtn');
-const stageTabBtn = document.getElementById('stageTabBtn');
-const cameraTabBtn = document.getElementById('cameraTabBtn');
-const devTabBtn = document.getElementById('devTabBtn');
-const mediaTabPanel = document.getElementById('mediaTabPanel');
-const mappingTabPanel = document.getElementById('mappingTabPanel');
-const stageTabPanel = document.getElementById('stageTabPanel');
-const cameraTabPanel = document.getElementById('cameraTabPanel');
-const devTabPanel = document.getElementById('devTabPanel');
+const mediaTabBtn = getElement('mediaTabBtn');
+const mappingTabBtn = getElement('mappingTabBtn');
+const stageTabBtn = getElement('stageTabBtn');
+const cameraTabBtn = getElement('cameraTabBtn');
+const devTabBtn = getElement('devTabBtn');
+const mediaTabPanel = getElement('mediaTabPanel');
+const mappingTabPanel = getElement('mappingTabPanel');
+const stageTabPanel = getElement('stageTabPanel');
+const cameraTabPanel = getElement('cameraTabPanel');
+const devTabPanel = getElement('devTabPanel');
 
-function switchSettingsTab(activeTabName) {
-  // Update buttons
-  mediaTabBtn?.classList.toggle('active', activeTabName === 'media');
-  mappingTabBtn?.classList.toggle('active', activeTabName === 'mapping');
-  stageTabBtn?.classList.toggle('active', activeTabName === 'stage');
-  cameraTabBtn?.classList.toggle('active', activeTabName === 'camera');
-  devTabBtn?.classList.toggle('active', activeTabName === 'dev');
-  
-  // Update panels
-  mediaTabPanel?.classList.toggle('active', activeTabName === 'media');
-  mappingTabPanel?.classList.toggle('active', activeTabName === 'mapping');
-  stageTabPanel?.classList.toggle('active', activeTabName === 'stage');
-  cameraTabPanel?.classList.toggle('active', activeTabName === 'camera');
-  devTabPanel?.classList.toggle('active', activeTabName === 'dev');
-}
-
-if (mediaTabBtn) {
-  mediaTabBtn.addEventListener('click', () => switchSettingsTab('media'));
-}
-if (mappingTabBtn) {
-  mappingTabBtn.addEventListener('click', () => switchSettingsTab('mapping'));
-}
-if (stageTabBtn) {
-  stageTabBtn.addEventListener('click', () => switchSettingsTab('stage'));
-}
-if (cameraTabBtn) {
-  cameraTabBtn.addEventListener('click', () => switchSettingsTab('camera'));
-}
-if (devTabBtn) {
-  devTabBtn.addEventListener('click', () => switchSettingsTab('dev'));
-}
-
-// Initialize with Media tab active
-switchSettingsTab('media');
+panelManager.setupTabs({
+  tabs: [
+    { button: mediaTabBtn, panel: mediaTabPanel, name: 'media' },
+    { button: mappingTabBtn, panel: mappingTabPanel, name: 'mapping' },
+    { button: stageTabBtn, panel: stageTabPanel, name: 'stage' },
+    { button: cameraTabBtn, panel: cameraTabPanel, name: 'camera' },
+    { button: devTabBtn, panel: devTabPanel, name: 'dev' }
+  ],
+  defaultTab: 'media'
+});
 
 // Version info display
 const versionInfoEl = document.getElementById('versionInfo');
@@ -1304,164 +460,7 @@ if (cameraPanelToggle && cameraPanel) {
   });
 }
 
-// Helper function to get client coordinates from mouse or touch event
-function getClientCoords(e) {
-  if (e.touches && e.touches.length > 0) {
-    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }
-  return { x: e.clientX, y: e.clientY };
-}
-
-// Handle mouse and touch move for all panels
-function handlePanelMove(e) {
-  const coords = getClientCoords(e);
-  
-  if (isDragging && settingsPanel) {
-      const deltaX = coords.x - dragStartX;
-      const deltaY = coords.y - dragStartY;
-      
-      let newX = panelStartX + deltaX;
-      let newY = panelStartY + deltaY;
-      
-      // Keep panel within viewport bounds
-    const panelRect = settingsPanel.getBoundingClientRect();
-      const maxX = window.innerWidth - panelRect.width;
-      const maxY = window.innerHeight - panelRect.height;
-      
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-      
-    settingsPanel.style.left = `${newX}px`;
-    settingsPanel.style.top = `${newY}px`;
-    settingsPanel.style.right = 'auto';
-    e.preventDefault();
-  }
-  
-  if (isDraggingCamera && cameraPanel) {
-    const deltaX = coords.x - dragStartX;
-    const deltaY = coords.y - dragStartY;
-    
-    let newX = panelStartX + deltaX;
-    let newY = panelStartY + deltaY;
-    
-    // Keep panel within viewport bounds
-    const panelRect = cameraPanel.getBoundingClientRect();
-    const maxX = window.innerWidth - panelRect.width;
-    const maxY = window.innerHeight - panelRect.height;
-    
-    newX = Math.max(0, Math.min(newX, maxX));
-    newY = Math.max(0, Math.min(newY, maxY));
-    
-    cameraPanel.style.left = `${newX}px`;
-    cameraPanel.style.top = `${newY}px`;
-    cameraPanel.style.right = 'auto';
-    e.preventDefault();
-  }
-  
-  if (isDraggingStyleShader && styleShaderPanel) {
-    const deltaX = coords.x - dragStartX;
-    const deltaY = coords.y - dragStartY;
-    
-    let newX = panelStartX + deltaX;
-    let newY = panelStartY + deltaY;
-    
-    // Keep panel within viewport bounds
-    const panelRect = styleShaderPanel.getBoundingClientRect();
-    const maxX = window.innerWidth - panelRect.width;
-    const maxY = window.innerHeight - panelRect.height;
-    
-    newX = Math.max(0, Math.min(newX, maxX));
-    newY = Math.max(0, Math.min(newY, maxY));
-    
-    styleShaderPanel.style.left = `${newX}px`;
-    styleShaderPanel.style.top = `${newY}px`;
-    styleShaderPanel.style.transform = 'none';
-    e.preventDefault();
-  }
-  
-  if (isDraggingPlayback && playbackControls.playbackMenu) {
-    const deltaX = coords.x - dragStartX;
-    const deltaY = coords.y - dragStartY;
-    
-    let newX = panelStartX + deltaX;
-    let newY = panelStartY + deltaY;
-    
-    // Keep panel within viewport bounds
-    const panelRect = playbackControls.playbackMenu.getBoundingClientRect();
-    const maxX = window.innerWidth - panelRect.width;
-    const maxY = window.innerHeight - panelRect.height;
-    
-    newX = Math.max(0, Math.min(newX, maxX));
-    newY = Math.max(0, Math.min(newY, maxY));
-    
-    playbackControls.playbackMenu.style.left = `${newX}px`;
-    playbackControls.playbackMenu.style.top = `${newY}px`;
-    playbackControls.playbackMenu.style.right = 'auto';
-    playbackControls.playbackMenu.style.bottom = 'auto';
-    playbackControls.playbackMenu.style.transform = 'none';
-    e.preventDefault();
-  }
-  
-  if (isDraggingFileInfo) {
-    const fileInfoTop = document.getElementById('fileInfoTop');
-    if (fileInfoTop) {
-      const deltaX = coords.x - dragStartX;
-      const deltaY = coords.y - dragStartY;
-      
-      let newX = panelStartX + deltaX;
-      let newY = panelStartY + deltaY;
-      
-      // Keep panel within viewport bounds
-      const panelRect = fileInfoTop.getBoundingClientRect();
-      const maxX = window.innerWidth - panelRect.width;
-      const maxY = window.innerHeight - panelRect.height;
-      
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-      
-      fileInfoTop.style.left = `${newX}px`;
-      fileInfoTop.style.top = `${newY}px`;
-      fileInfoTop.style.right = 'auto';
-      fileInfoTop.style.bottom = 'auto';
-      fileInfoTop.style.transform = 'none';
-      e.preventDefault();
-    }
-  }
-}
-
-document.addEventListener('mousemove', handlePanelMove);
-document.addEventListener('touchmove', handlePanelMove, { passive: false });
-
-// Handle mouse and touch end for all panels
-function handlePanelEnd() {
-  if (isDragging && settingsPanel) {
-      isDragging = false;
-    settingsPanel.style.cursor = 'grab';
-  }
-  if (isDraggingCamera && cameraPanel) {
-    isDraggingCamera = false;
-    cameraPanel.style.cursor = 'grab';
-  }
-  if (isDraggingStyleShader && styleShaderPanel) {
-    isDraggingStyleShader = false;
-    styleShaderPanel.style.cursor = 'grab';
-  }
-  if (isDraggingPlayback && playbackControls.playbackMenu) {
-    isDraggingPlayback = false;
-    playbackControls.playbackMenu.style.cursor = 'grab';
-  }
-  if (isDraggingFileInfo) {
-    const fileInfoTop = document.getElementById('fileInfoTop');
-    if (fileInfoTop) {
-      isDraggingFileInfo = false;
-      fileInfoTop.style.cursor = 'grab';
-    }
-  }
-}
-
-document.addEventListener('mouseup', handlePanelEnd);
-document.addEventListener('touchend', handlePanelEnd);
-document.addEventListener('touchcancel', handlePanelEnd);
+// Panel dragging is now handled by PanelManager
 
 // Shader Controls - Wire up UI to update shader uniforms
 function updateShaderUniforms(shaderType, uniformName, value) {
@@ -1536,511 +535,12 @@ function syncControlsToShaderValues(shaderType, material) {
   }
 }
 
-// Initialize shader controls
-function initShaderControls() {
-  console.log('Initializing shader controls...');
-  console.log('Material references:', materialReferences);
-  
-  // Sync all controls to match current shader material values
-  Object.keys(shaderMaterials).forEach(shaderType => {
-    const material = shaderMaterials[shaderType];
-    syncControlsToShaderValues(shaderType, material);
-  });
-  
-  // Artists shader controls
-  const artistsColorR = document.getElementById('artistsColorR');
-  const artistsColorG = document.getElementById('artistsColorG');
-  const artistsColorB = document.getElementById('artistsColorB');
-  const artistsColorPicker = document.getElementById('artistsColorPicker');
-  const artistsRoughness = document.getElementById('artistsRoughness');
-  const artistsSpecular = document.getElementById('artistsSpecular');
-
-  function updateArtistsColor() {
-    const r = parseFloat(artistsColorR.value);
-    const g = parseFloat(artistsColorG.value);
-    const b = parseFloat(artistsColorB.value);
-    console.log(`Updating artists color to: ${r}, ${g}, ${b}`);
-    console.log(`Materials in artists array:`, materialReferences['artists']);
-    updateShaderUniforms('artists', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('artistsColorRValue')) document.getElementById('artistsColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('artistsColorGValue')) document.getElementById('artistsColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('artistsColorBValue')) document.getElementById('artistsColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (artistsColorPicker) artistsColorPicker.value = hex;
-  }
-
-  if (artistsColorR && artistsColorG && artistsColorB) {
-    artistsColorR.addEventListener('input', updateArtistsColor);
-    artistsColorG.addEventListener('input', updateArtistsColor);
-    artistsColorB.addEventListener('input', updateArtistsColor);
-    console.log('Artists color controls wired up');
-  }
-
-  if (artistsColorPicker) {
-    artistsColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      artistsColorR.value = r;
-      artistsColorG.value = g;
-      artistsColorB.value = b;
-      updateArtistsColor();
-    });
-  }
-
-  if (artistsRoughness) {
-    artistsRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('artists', 'uRoughness', value);
-      if (document.getElementById('artistsRoughnessValue')) document.getElementById('artistsRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (artistsSpecular) {
-    artistsSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('artists', 'uSpecular', value);
-      if (document.getElementById('artistsSpecularValue')) document.getElementById('artistsSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Base shader controls
-  const baseColorR = document.getElementById('baseColorR');
-  const baseColorG = document.getElementById('baseColorG');
-  const baseColorB = document.getElementById('baseColorB');
-  const baseColorPicker = document.getElementById('baseColorPicker');
-  const baseRoughness = document.getElementById('baseRoughness');
-  const baseSpecular = document.getElementById('baseSpecular');
-
-  function updateBaseColor() {
-    const r = parseFloat(baseColorR.value);
-    const g = parseFloat(baseColorG.value);
-    const b = parseFloat(baseColorB.value);
-    updateShaderUniforms('base', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('baseColorRValue')) document.getElementById('baseColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('baseColorGValue')) document.getElementById('baseColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('baseColorBValue')) document.getElementById('baseColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (baseColorPicker) baseColorPicker.value = hex;
-  }
-
-  if (baseColorR && baseColorG && baseColorB) {
-    baseColorR.addEventListener('input', updateBaseColor);
-    baseColorG.addEventListener('input', updateBaseColor);
-    baseColorB.addEventListener('input', updateBaseColor);
-  }
-
-  if (baseColorPicker) {
-    baseColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      baseColorR.value = r;
-      baseColorG.value = g;
-      baseColorB.value = b;
-      updateBaseColor();
-    });
-  }
-
-  if (baseRoughness) {
-    baseRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('base', 'uRoughness', value);
-      if (document.getElementById('baseRoughnessValue')) document.getElementById('baseRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (baseSpecular) {
-    baseSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('base', 'uSpecular', value);
-      if (document.getElementById('baseSpecularValue')) document.getElementById('baseSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Stage shader controls
-  const stageColorR = document.getElementById('stageColorR');
-  const stageColorG = document.getElementById('stageColorG');
-  const stageColorB = document.getElementById('stageColorB');
-  const stageColorPicker = document.getElementById('stageColorPicker');
-  const stageRoughness = document.getElementById('stageRoughness');
-  const stageSpecular = document.getElementById('stageSpecular');
-
-  function updateStageColor() {
-    const r = parseFloat(stageColorR.value);
-    const g = parseFloat(stageColorG.value);
-    const b = parseFloat(stageColorB.value);
-    updateShaderUniforms('stage', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('stageColorRValue')) document.getElementById('stageColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('stageColorGValue')) document.getElementById('stageColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('stageColorBValue')) document.getElementById('stageColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (stageColorPicker) stageColorPicker.value = hex;
-  }
-
-  if (stageColorR && stageColorG && stageColorB) {
-    stageColorR.addEventListener('input', updateStageColor);
-    stageColorG.addEventListener('input', updateStageColor);
-    stageColorB.addEventListener('input', updateStageColor);
-  }
-
-  if (stageColorPicker) {
-    stageColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      stageColorR.value = r;
-      stageColorG.value = g;
-      stageColorB.value = b;
-      updateStageColor();
-    });
-  }
-
-  if (stageRoughness) {
-    stageRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('stage', 'uRoughness', value);
-      if (document.getElementById('stageRoughnessValue')) document.getElementById('stageRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (stageSpecular) {
-    stageSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('stage', 'uSpecular', value);
-      if (document.getElementById('stageSpecularValue')) document.getElementById('stageSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Pillars shader controls
-  const pillarsColorR = document.getElementById('pillarsColorR');
-  const pillarsColorG = document.getElementById('pillarsColorG');
-  const pillarsColorB = document.getElementById('pillarsColorB');
-  const pillarsColorPicker = document.getElementById('pillarsColorPicker');
-  const pillarsRoughness = document.getElementById('pillarsRoughness');
-  const pillarsSpecular = document.getElementById('pillarsSpecular');
-
-  function updatePillarsColor() {
-    const r = parseFloat(pillarsColorR.value);
-    const g = parseFloat(pillarsColorG.value);
-    const b = parseFloat(pillarsColorB.value);
-    updateShaderUniforms('pillars', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('pillarsColorRValue')) document.getElementById('pillarsColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('pillarsColorGValue')) document.getElementById('pillarsColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('pillarsColorBValue')) document.getElementById('pillarsColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (pillarsColorPicker) pillarsColorPicker.value = hex;
-  }
-
-  if (pillarsColorR && pillarsColorG && pillarsColorB) {
-    pillarsColorR.addEventListener('input', updatePillarsColor);
-    pillarsColorG.addEventListener('input', updatePillarsColor);
-    pillarsColorB.addEventListener('input', updatePillarsColor);
-  }
-
-  if (pillarsColorPicker) {
-    pillarsColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      pillarsColorR.value = r;
-      pillarsColorG.value = g;
-      pillarsColorB.value = b;
-      updatePillarsColor();
-    });
-  }
-
-  if (pillarsRoughness) {
-    pillarsRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('pillars', 'uRoughness', value);
-      if (document.getElementById('pillarsRoughnessValue')) document.getElementById('pillarsRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (pillarsSpecular) {
-    pillarsSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('pillars', 'uSpecular', value);
-      if (document.getElementById('pillarsSpecularValue')) document.getElementById('pillarsSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Floor shader controls
-  const floorColorR = document.getElementById('floorColorR');
-  const floorColorG = document.getElementById('floorColorG');
-  const floorColorB = document.getElementById('floorColorB');
-  const floorColorPicker = document.getElementById('floorColorPicker');
-  const floorRoughness = document.getElementById('floorRoughness');
-  const floorSpecular = document.getElementById('floorSpecular');
-
-  function updateFloorColor() {
-    const r = parseFloat(floorColorR.value);
-    const g = parseFloat(floorColorG.value);
-    const b = parseFloat(floorColorB.value);
-    updateShaderUniforms('floor', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('floorColorRValue')) document.getElementById('floorColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('floorColorGValue')) document.getElementById('floorColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('floorColorBValue')) document.getElementById('floorColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (floorColorPicker) floorColorPicker.value = hex;
-  }
-
-  if (floorColorR && floorColorG && floorColorB) {
-    floorColorR.addEventListener('input', updateFloorColor);
-    floorColorG.addEventListener('input', updateFloorColor);
-    floorColorB.addEventListener('input', updateFloorColor);
-  }
-
-  if (floorColorPicker) {
-    floorColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      floorColorR.value = r;
-      floorColorG.value = g;
-      floorColorB.value = b;
-      updateFloorColor();
-    });
-  }
-
-  if (floorRoughness) {
-    floorRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('floor', 'uRoughness', value);
-      if (document.getElementById('floorRoughnessValue')) document.getElementById('floorRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (floorSpecular) {
-    floorSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('floor', 'uSpecular', value);
-      if (document.getElementById('floorSpecularValue')) document.getElementById('floorSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Crowd shader controls
-  const crowdColorR = document.getElementById('crowdColorR');
-  const crowdColorG = document.getElementById('crowdColorG');
-  const crowdColorB = document.getElementById('crowdColorB');
-  const crowdColorPicker = document.getElementById('crowdColorPicker');
-  const crowdRoughness = document.getElementById('crowdRoughness');
-  const crowdSpecular = document.getElementById('crowdSpecular');
-
-  function updateCrowdColor() {
-    const r = parseFloat(crowdColorR.value);
-    const g = parseFloat(crowdColorG.value);
-    const b = parseFloat(crowdColorB.value);
-    updateShaderUniforms('crowd', 'uBaseColor', [r, g, b]);
-    if (document.getElementById('crowdColorRValue')) document.getElementById('crowdColorRValue').textContent = r.toFixed(2);
-    if (document.getElementById('crowdColorGValue')) document.getElementById('crowdColorGValue').textContent = g.toFixed(2);
-    if (document.getElementById('crowdColorBValue')) document.getElementById('crowdColorBValue').textContent = b.toFixed(2);
-    
-    const hex = '#' + [r, g, b].map(x => {
-      const hex = Math.round(x * 255).toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-    if (crowdColorPicker) crowdColorPicker.value = hex;
-  }
-
-  if (crowdColorR && crowdColorG && crowdColorB) {
-    crowdColorR.addEventListener('input', updateCrowdColor);
-    crowdColorG.addEventListener('input', updateCrowdColor);
-    crowdColorB.addEventListener('input', updateCrowdColor);
-  }
-
-  if (crowdColorPicker) {
-    crowdColorPicker.addEventListener('input', (e) => {
-      const hex = e.target.value;
-      const r = parseInt(hex.slice(1, 3), 16) / 255;
-      const g = parseInt(hex.slice(3, 5), 16) / 255;
-      const b = parseInt(hex.slice(5, 7), 16) / 255;
-      crowdColorR.value = r;
-      crowdColorG.value = g;
-      crowdColorB.value = b;
-      updateCrowdColor();
-    });
-  }
-
-  if (crowdRoughness) {
-    crowdRoughness.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('crowd', 'uRoughness', value);
-      if (document.getElementById('crowdRoughnessValue')) document.getElementById('crowdRoughnessValue').textContent = value.toFixed(2);
-    });
-  }
-
-  if (crowdSpecular) {
-    crowdSpecular.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      updateShaderUniforms('crowd', 'uSpecular', value);
-      if (document.getElementById('crowdSpecularValue')) document.getElementById('crowdSpecularValue').textContent = value.toFixed(2);
-    });
-  }
-
-  // Copy button functionality - reads current values from UI controls
-  function copyShaderValues(shaderType) {
-    // Get current values from UI controls
-    const colorR = document.getElementById(`${shaderType}ColorR`);
-    const colorG = document.getElementById(`${shaderType}ColorG`);
-    const colorB = document.getElementById(`${shaderType}ColorB`);
-    const roughnessSlider = document.getElementById(`${shaderType}Roughness`);
-    const specularSlider = document.getElementById(`${shaderType}Specular`);
-    
-    if (!colorR || !colorG || !colorB || !roughnessSlider || !specularSlider) {
-      console.error(`Could not find controls for shader type: ${shaderType}`);
-      return;
-    }
-    
-    // Get current values from sliders
-    const r = parseFloat(colorR.value);
-    const g = parseFloat(colorG.value);
-    const b = parseFloat(colorB.value);
-    const roughness = parseFloat(roughnessSlider.value);
-    const specular = parseFloat(specularSlider.value);
-
-    const valuesString = `${shaderType}: {
-  baseColor: [${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)}],
-  roughness: ${roughness.toFixed(3)},
-  specular: ${specular.toFixed(3)}
-}`;
-
-    // Copy to clipboard
-    navigator.clipboard.writeText(valuesString).then(() => {
-      console.log(`Copied ${shaderType} shader values to clipboard:`);
-      console.log(valuesString);
-      alert(`Copied ${shaderType} shader values to clipboard!`);
-    }).catch(err => {
-      console.error('Failed to copy:', err);
-      // Fallback: log to console
-      console.log(`\n${shaderType} shader values:\n${valuesString}`);
-      prompt('Copy these values:', valuesString);
-    });
-  }
-
-  // Wire up copy buttons
-  const copyBaseBtn = document.getElementById('copyBaseShaderBtn');
-  const copyArtistsBtn = document.getElementById('copyArtistsShaderBtn');
-  const copyStageBtn = document.getElementById('copyStageShaderBtn');
-  const copyPillarsBtn = document.getElementById('copyPillarsShaderBtn');
-  const copyFloorBtn = document.getElementById('copyFloorShaderBtn');
-  const copyCrowdBtn = document.getElementById('copyCrowdShaderBtn');
-
-  if (copyBaseBtn) {
-    copyBaseBtn.addEventListener('click', () => copyShaderValues('base'));
-  }
-  if (copyArtistsBtn) {
-    copyArtistsBtn.addEventListener('click', () => copyShaderValues('artists'));
-  }
-  if (copyStageBtn) {
-    copyStageBtn.addEventListener('click', () => copyShaderValues('stage'));
-  }
-  if (copyPillarsBtn) {
-    copyPillarsBtn.addEventListener('click', () => copyShaderValues('pillars'));
-  }
-  if (copyFloorBtn) {
-    copyFloorBtn.addEventListener('click', () => copyShaderValues('floor'));
-  }
-  if (copyCrowdBtn) {
-    copyCrowdBtn.addEventListener('click', () => copyShaderValues('crowd'));
-  }
-
-  // Copy all shader values function
-  function copyAllShaderValues() {
-    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor', 'crowd'];
-    const allValues = {};
-    
-    shaderTypes.forEach(shaderType => {
-      const colorR = document.getElementById(`${shaderType}ColorR`);
-      const colorG = document.getElementById(`${shaderType}ColorG`);
-      const colorB = document.getElementById(`${shaderType}ColorB`);
-      const roughnessSlider = document.getElementById(`${shaderType}Roughness`);
-      const specularSlider = document.getElementById(`${shaderType}Specular`);
-      
-      if (colorR && colorG && colorB && roughnessSlider && specularSlider) {
-        const r = parseFloat(colorR.value);
-        const g = parseFloat(colorG.value);
-        const b = parseFloat(colorB.value);
-        const roughness = parseFloat(roughnessSlider.value);
-        const specular = parseFloat(specularSlider.value);
-        
-        allValues[shaderType] = {
-          baseColor: [r.toFixed(3), g.toFixed(3), b.toFixed(3)],
-          roughness: roughness.toFixed(3),
-          specular: specular.toFixed(3)
-        };
-      }
-    });
-    
-    // Format as a JavaScript object
-    let valuesString = '';
-    Object.keys(allValues).forEach(shaderType => {
-      const values = allValues[shaderType];
-      valuesString += `${shaderType}: {\n  baseColor: [${values.baseColor.join(', ')}],\n  roughness: ${values.roughness},\n  specular: ${values.specular}\n}`;
-      if (shaderType !== Object.keys(allValues)[Object.keys(allValues).length - 1]) {
-        valuesString += ',\n\n';
-      }
-    });
-    
-    const fullString = valuesString;
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(fullString).then(() => {
-      console.log('Copied all shader values to clipboard:');
-      console.log(fullString);
-      alert('Copied all shader values to clipboard!');
-    }).catch(err => {
-      console.error('Failed to copy:', err);
-      // Fallback: log to console
-      console.log('\nAll shader values:\n' + fullString);
-      prompt('Copy these values:', fullString);
-    });
-  }
-
-  // Wire up copy all button
-  const copyAllShadersBtn = document.getElementById('copyAllShadersBtn');
-  if (copyAllShadersBtn) {
-    copyAllShadersBtn.addEventListener('click', copyAllShaderValues);
-  }
-  
-  // Sync all controls to match current shader material values after setup
-  Object.keys(shaderMaterials).forEach(shaderType => {
-    const material = shaderMaterials[shaderType];
-    if (material && material.uniforms) {
-      syncControlsToShaderValues(shaderType, material);
-    }
-  });
-}
+// Initialize Shader Controls
+const shaderControls = new ShaderControls(shaderMaterials, materialReferences, updateShaderUniforms, syncControlsToShaderValues);
 
 // Initialize shader controls after meshes are loaded (delay to ensure materials are ready)
 setTimeout(() => {
-  initShaderControls();
+  shaderControls.init();
 }, 2000);
 
 // NDI streams list
@@ -2066,42 +566,6 @@ sourceTypeSelect.addEventListener('change', (e) => {
     ndiStreamGroup.style.display = 'block';
     // Auto-discover NDI streams when switching to NDI mode
     discoverNDIStreams();
-  } else if (selectedType === 'checkerboard') {
-    // Hide both texture input and NDI controls
-    textureInputGroup.style.display = 'none';
-    ndiStreamGroup.style.display = 'none';
-    
-    // Load checkerboard texture
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      '/assets/textures/UVGrid55to1.png',
-      // onLoad callback
-      (texture) => {
-        // Apply texture to shader material
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        
-        material.uniforms.uTexture.value = texture;
-        material.uniforms.uHasTexture.value = 1.0;
-        material.uniforms.uIsImageTexture.value = 1.0;
-        
-        // Update LED shaders with the checkerboard texture
-        updateLEDShaders();
-        
-        // Hide overlay
-        if (overlayImage) overlayImage.style.display = 'none';
-        if (overlayVideo) overlayVideo.style.display = 'none';
-      },
-      // onProgress callback (optional)
-      undefined,
-      // onError callback
-      (error) => {
-        console.error('Error loading checkerboard texture:', error);
-        alert('Error loading checkerboard texture. Please ensure UVGrid55to1.png exists in /assets/textures/');
-      }
-    );
   }
 });
 
@@ -2137,18 +601,22 @@ if (mappingTypeSelect) {
     // Hide front screen by default for Festival Mapping, show for Front Projection types
     setTimeout(() => {
       const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+      // Get current LED front mesh from LEDMapping
+      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
       if (selectedType === 'festival') {
         // Hide front screen for Festival Mapping
-        if (ledFrontMesh) {
-          ledFrontMesh.visible = false;
+        if (currentLedFrontMesh) {
+          currentLedFrontMesh.visible = false;
+          ledFrontMesh = currentLedFrontMesh; // Update global reference
         }
         if (hideLedFrontCheckbox) {
           hideLedFrontCheckbox.checked = true;
         }
       } else if (selectedType === 'frontProjection' || selectedType === 'frontProjectionPerspective') {
         // Show front screen for Front Projection types
-        if (ledFrontMesh) {
-          ledFrontMesh.visible = true;
+        if (currentLedFrontMesh) {
+          currentLedFrontMesh.visible = true;
+          ledFrontMesh = currentLedFrontMesh; // Update global reference
         }
         if (hideLedFrontCheckbox) {
           hideLedFrontCheckbox.checked = false;
@@ -2156,7 +624,7 @@ if (mappingTypeSelect) {
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders();
+      updateLEDShaders(ledsGroup, material);
     }, 100);
   });
 }
@@ -2174,27 +642,17 @@ if (useCorrectedMeshCheckbox) {
     
     // Wait for meshes to load and then restore visibility state
     setTimeout(() => {
-      // Find LED front mesh if it exists (it might have been reassigned)
-      if (!ledFrontMesh) {
-        ledsGroup.traverse((child) => {
-          if (child.isMesh || (child.isGroup && child.children.length > 0)) {
-            const meshName = child.name || '';
-            const path = child.userData?.path || '';
-            if ((meshName.includes('FRONT') || meshName.includes('Front') || 
-                 path.includes('LED_FRONT') || path.includes('LED_Front')) && !ledFrontMesh) {
-              ledFrontMesh = child.isMesh ? child : child.children.find(c => c.isMesh) || child;
-            }
-          }
-        });
-      }
+      // Get LED front mesh from LEDMapping (it manages the mesh)
+      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
       
       // Restore LED front visibility state based on checkbox
-      if (ledFrontMesh && hideLedFrontCheckbox) {
-        ledFrontMesh.visible = !shouldHideLedFront;
+      if (currentLedFrontMesh && hideLedFrontCheckbox) {
+        currentLedFrontMesh.visible = !shouldHideLedFront;
+        ledFrontMesh = currentLedFrontMesh; // Update global reference
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders();
+      updateLEDShaders(ledsGroup, material);
     }, 200);
   });
   
@@ -2209,27 +667,17 @@ if (useCorrectedMeshCheckbox) {
     
     // Wait for meshes to load and then restore visibility state
     setTimeout(() => {
-      // Find LED front mesh if it exists
-      if (!ledFrontMesh) {
-        ledsGroup.traverse((child) => {
-          if (child.isMesh || (child.isGroup && child.children.length > 0)) {
-            const meshName = child.name || '';
-            const path = child.userData?.path || '';
-            if ((meshName.includes('FRONT') || meshName.includes('Front') || 
-                 path.includes('LED_FRONT') || path.includes('LED_Front')) && !ledFrontMesh) {
-              ledFrontMesh = child.isMesh ? child : child.children.find(c => c.isMesh) || child;
-            }
-          }
-        });
-      }
+      // Get LED front mesh from LEDMapping (it manages the mesh)
+      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
       
       // Restore LED front visibility state
-      if (ledFrontMesh && hideLedFrontCheckbox) {
-        ledFrontMesh.visible = !shouldHideLedFront;
+      if (currentLedFrontMesh && hideLedFrontCheckbox) {
+        currentLedFrontMesh.visible = !shouldHideLedFront;
+        ledFrontMesh = currentLedFrontMesh; // Update global reference
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders();
+      updateLEDShaders(ledsGroup, material);
     }, 200);
   }
 }
@@ -2525,11 +973,14 @@ const stillFileNameDisplay = document.getElementById('stillFileNameDisplay');
 const showFileInfoCheckbox = document.getElementById('showFileInfo');
 const timelineContainer = document.getElementById('timelineContainer');
 const timelineSlider = document.getElementById('timelineSlider');
-let currentVideoElement = null;
-let currentVideoPath = null; // Store current video path/filename
-let currentImagePath = null; // Store current image path/filename
-let videoFrameRate = 30; // Default frame rate, will be updated if available
+const textureInput = document.getElementById('textureInput');
+const textureStatus = document.getElementById('textureStatus');
+const showMappingCheckbox = document.getElementById('showMapping');
+const videoAssetSelect = document.getElementById('videoAssetSelect');
 let isSeeking = false;
+
+// MediaManager will be initialized after playbackControls and other dependencies are ready
+let mediaManager = null;
 
 // Function to parse MP4 header to extract frame rate
 async function parseMP4FrameRate(file) {
@@ -2871,7 +1322,8 @@ function getImageMetadata(file, imageElement) {
 function updateStillInfo(file) {
   if (!stillInfo || !stillFileNameDisplay) return;
   
-  const fileName = getFileName(file ? file.name : (currentImagePath || ''));
+  const imagePath = mediaManager ? mediaManager.getCurrentImagePath() : null;
+  const fileName = getFileName(file ? file.name : (imagePath || ''));
   const metadata = getImageMetadata(file, overlayImage);
   
   stillFileNameDisplay.textContent = `${fileName} (${metadata.bitDepth}, ${metadata.colorspace})`;
@@ -2898,8 +1350,9 @@ function updateFrameInfo(video) {
   };
   
   // Extract filename and codec
-  const fileName = getFileName(currentVideoPath);
-  const codec = getVideoCodec(video, currentVideoPath);
+  const videoPath = mediaManager ? mediaManager.getCurrentVideoPath() : null;
+  const fileName = getFileName(videoPath);
+  const codec = getVideoCodec(video, videoPath);
   
   if (!video || !isFinite(video.duration) || video.duration === 0) {
     if (frameInfo) {
@@ -2916,8 +1369,9 @@ function updateFrameInfo(video) {
   
   const currentTime = video.currentTime || 0;
   const duration = video.duration;
-  const currentFrame = Math.floor(currentTime * videoFrameRate);
-  const totalFrames = Math.floor(duration * videoFrameRate);
+  const frameRate = mediaManager ? mediaManager.getVideoFrameRate() : 30;
+  const currentFrame = Math.floor(currentTime * frameRate);
+  const totalFrames = Math.floor(duration * frameRate);
   
   // Update filename display with codec info
   if (fileNameDisplay) {
@@ -2961,22 +1415,24 @@ timelineSlider.addEventListener('mousedown', () => {
 
 timelineSlider.addEventListener('mouseup', () => {
   isSeeking = false;
-  if (currentVideoElement && isFinite(currentVideoElement.duration)) {
+  const videoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+  if (videoElement && isFinite(videoElement.duration)) {
     const percentage = parseFloat(timelineSlider.value);
-    const newTime = (percentage / 100) * currentVideoElement.duration;
-    currentVideoElement.currentTime = newTime;
-    overlayVideo.currentTime = newTime;
-    updateFrameInfo(currentVideoElement);
+    const newTime = (percentage / 100) * videoElement.duration;
+    videoElement.currentTime = newTime;
+    if (overlayVideo) overlayVideo.currentTime = newTime;
+    updateFrameInfo(videoElement);
   }
 });
 
 timelineSlider.addEventListener('input', () => {
-  if (currentVideoElement && isFinite(currentVideoElement.duration)) {
+  const videoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+  if (videoElement && isFinite(videoElement.duration)) {
     const percentage = parseFloat(timelineSlider.value);
-    const newTime = (percentage / 100) * currentVideoElement.duration;
-    currentVideoElement.currentTime = newTime;
-    overlayVideo.currentTime = newTime;
-    updateFrameInfo(currentVideoElement);
+    const newTime = (percentage / 100) * videoElement.duration;
+    videoElement.currentTime = newTime;
+    if (overlayVideo) overlayVideo.currentTime = newTime;
+    updateFrameInfo(videoElement);
   }
 });
 
@@ -3106,7 +1562,6 @@ if (copyBackgroundColorBtn) {
 }
 
 // Checkbox to toggle mapping visibility
-const showMappingCheckbox = document.getElementById('showMapping');
 const hideLedFrontCheckbox = document.getElementById('hideLedFront');
 const blackGaragesCheckbox = document.getElementById('blackGarages');
 const djDeckHeightSlider = document.getElementById('djDeckHeightSlider');
@@ -3117,13 +1572,26 @@ const blackMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
 // Function to apply black material to garage meshes
 function applyBlackToGarages(apply) {
-  const garageMeshes = [slGarageMesh, srGarageMesh];
+  // Get garage meshes from LEDMapping (it manages the meshes)
+  const garages = ledMapping ? ledMapping.getGarageMeshes() : { sl: slGarageMesh, sr: srGarageMesh };
+  const garageMeshes = [garages.sl, garages.sr];
   
-  garageMeshes.forEach((garageMesh) => {
-    if (!garageMesh) return;
+  console.log('applyBlackToGarages called:', { apply, sl: !!garages.sl, sr: !!garages.sr });
+  
+  // Update global references for backwards compatibility
+  if (garages.sl) slGarageMesh = garages.sl;
+  if (garages.sr) srGarageMesh = garages.sr;
+  
+  let meshCount = 0;
+  garageMeshes.forEach((garageMesh, index) => {
+    if (!garageMesh) {
+      console.warn(`Garage mesh ${index === 0 ? 'SL' : 'SR'} not found`);
+      return;
+    }
     
     garageMesh.traverse((child) => {
       if (child.isMesh) {
+        meshCount++;
         if (apply) {
           // Store original material if not already stored
           if (!child.userData.originalMaterial) {
@@ -3131,28 +1599,45 @@ function applyBlackToGarages(apply) {
           }
           // Apply black material
           child.material = blackMaterial;
+          console.log(`Applied black material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
         } else {
           // Restore LED shader material (always create fresh to ensure uniforms are current)
-          child.material = createLEDShaderMaterial();
+          // Pass the texture material reference to createLEDShaderMaterial
+          child.material = createLEDShaderMaterial(material);
           // Update shader with current texture
-          updateLEDShaders();
+          updateLEDShaders(ledsGroup, material);
           child.userData.originalMaterial = null;
+          console.log(`Restored LED shader material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
         }
       }
     });
   });
+  
+  if (meshCount === 0) {
+    console.warn('No meshes found in garage meshes. They may not be loaded yet.');
+  } else {
+    console.log(`Processed ${meshCount} meshes in garage meshes`);
+  }
 }
 
 // Handle hide LED front checkbox
 hideLedFrontCheckbox.addEventListener('change', (e) => {
-  if (ledFrontMesh) {
-    ledFrontMesh.visible = !e.target.checked;
+  // Get the current LED front mesh from LEDMapping (it manages the mesh)
+  const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
+  if (currentLedFrontMesh) {
+    currentLedFrontMesh.visible = !e.target.checked;
+    // Also update the global reference for backwards compatibility
+    ledFrontMesh = currentLedFrontMesh;
+    console.log('LED front visibility set to:', !e.target.checked);
+  } else {
+    console.warn('LED front mesh not found, checkbox state:', e.target.checked);
   }
 });
 
 // Handle black garages checkbox
 if (blackGaragesCheckbox) {
   blackGaragesCheckbox.addEventListener('change', (e) => {
+    console.log('Black garages checkbox changed:', e.target.checked);
     applyBlackToGarages(e.target.checked);
   });
 }
@@ -3191,7 +1676,8 @@ if (crowdInstanceCountSlider && crowdInstanceCountValue) {
 showMappingCheckbox.addEventListener('change', (e) => {
   if (e.target.checked) {
     // Show if there's a video or texture loaded
-    if (currentVideoElement || material.uniforms.uHasTexture.value === 1.0) {
+    const videoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+    if (videoElement || material.uniforms.uHasTexture.value === 1.0) {
       mapping.classList.add('active');
     }
   } else {
@@ -3202,382 +1688,104 @@ showMappingCheckbox.addEventListener('change', (e) => {
 // ============================================
 // Playback Controls
 // ============================================
-const playbackControls = {
-  // DOM Elements (will be set in init)
-  playPauseBtn: null,
-  jumpToStartBtn: null,
-  rewindBtn: null,
-  jumpToEndBtn: null,
-  prevFrameBtn: null,
-  nextFrameBtn: null,
-  muteBtn: null,
-  volumeSlider: null,
-  playbackMenu: null,
-  
-  // Constants
-  TIME_JUMP_AMOUNT: 10, // Jump amount in seconds
-  
-  // Icons
-  icons: {
-    play: '<span class="material-icons">play_arrow</span>',
-    pause: '<span class="material-icons">pause</span>',
-    rewind: '<span class="material-icons">replay_10</span>',
-    forward: '<span class="material-icons">forward_10</span>',
-    unmuted: '<span class="material-icons">volume_up</span>',
-    muted: '<span class="material-icons">volume_off</span>'
-  },
-  
-  // Update play/pause button icon
-  updatePlayPauseIcon() {
-    if (!this.playPauseBtn) return;
-  if (!currentVideoElement) {
-      this.playPauseBtn.innerHTML = this.icons.play;
-    return;
-  }
-    this.playPauseBtn.innerHTML = currentVideoElement.paused ? this.icons.play : this.icons.pause;
-  },
-  
-  // Update mute button icon
-  updateMuteIcon() {
-    if (!this.muteBtn) return;
-    if (!currentVideoElement) {
-      this.muteBtn.innerHTML = this.icons.unmuted;
-      return;
-    }
-    this.muteBtn.innerHTML = currentVideoElement.muted ? this.icons.muted : this.icons.unmuted;
-  },
-  
-  // Toggle play/pause
-  togglePlayPause() {
-    if (!currentVideoElement) return;
-    
-    if (currentVideoElement.paused) {
-      currentVideoElement.play().catch(err => console.error('Error playing video:', err));
-      overlayVideo.play().catch(err => console.error('Error playing overlay video:', err));
-    } else {
-      currentVideoElement.pause();
-      overlayVideo.pause();
-    }
-    this.updatePlayPauseIcon();
-  },
-  
-  // Jump to beginning
-  jumpToStart() {
-    if (!currentVideoElement) return;
-    
-    currentVideoElement.currentTime = 0;
-    overlayVideo.currentTime = 0;
-    updateFrameInfo(currentVideoElement);
-  },
-  
-  // Jump by seconds (positive for forward, negative for backward)
-  jumpSeconds(seconds) {
-    if (!currentVideoElement) return;
-    
-    const newTime = Math.max(0, Math.min(
-      currentVideoElement.duration || Infinity,
-      currentVideoElement.currentTime + seconds
-    ));
-    
-    currentVideoElement.currentTime = newTime;
-    overlayVideo.currentTime = newTime;
-    updateFrameInfo(currentVideoElement);
-  },
-  
-  // Jump by frames (kept for backwards compatibility, converts to seconds)
-  jumpFrames(frames) {
-    if (!currentVideoElement || videoFrameRate <= 0) return;
-    const timeOffset = frames / videoFrameRate;
-    this.jumpSeconds(timeOffset);
-  },
-  
-  // Jump to previous frame
-  jumpPreviousFrame() {
-    if (!currentVideoElement || videoFrameRate <= 0) return;
-    // Pause video if playing
-    if (!currentVideoElement.paused) {
-      currentVideoElement.pause();
-      overlayVideo.pause();
-      this.updatePlayPauseIcon();
-    }
-    this.jumpFrames(-1);
-  },
-  
-  // Jump to next frame
-  jumpNextFrame() {
-    if (!currentVideoElement || videoFrameRate <= 0) return;
-    // Pause video if playing
-    if (!currentVideoElement.paused) {
-      currentVideoElement.pause();
-      overlayVideo.pause();
-      this.updatePlayPauseIcon();
-    }
-    this.jumpFrames(1);
-  },
-  
-  // Toggle mute
-  toggleMute() {
-    if (!currentVideoElement) return;
-    currentVideoElement.muted = !currentVideoElement.muted;
-    this.updateMuteIcon();
-    // Don't change volume slider position when toggling mute
-    // The slider position represents the volume level, which is preserved
-  },
-  
-  // Update volume
-  updateVolume(volume) {
-    if (!currentVideoElement) return;
-    // Volume is 0-1, slider is 0-100
-    currentVideoElement.volume = volume / 100;
-    // If volume is set above 0, unmute
-    if (volume > 0 && currentVideoElement.muted) {
-      currentVideoElement.muted = false;
-      this.updateMuteIcon();
-    }
-    // If volume is set to 0, mute
-    if (volume === 0 && !currentVideoElement.muted) {
-      currentVideoElement.muted = true;
-      this.updateMuteIcon();
-    }
-  },
-  
-  // Enable/disable all controls
-  setEnabled(enabled) {
-    if (!this.playPauseBtn || !this.jumpToStartBtn || !this.rewindBtn || !this.jumpToEndBtn || !this.muteBtn) {
-    return;
-  }
-    
-    this.playPauseBtn.disabled = !enabled;
-    this.jumpToStartBtn.disabled = !enabled;
-    this.rewindBtn.disabled = !enabled;
-    this.jumpToEndBtn.disabled = !enabled;
-    if (this.prevFrameBtn) {
-      this.prevFrameBtn.disabled = !enabled;
-    }
-    if (this.nextFrameBtn) {
-      this.nextFrameBtn.disabled = !enabled;
-    }
-    this.muteBtn.disabled = !enabled;
-    if (this.volumeSlider) {
-      this.volumeSlider.disabled = !enabled;
-    }
-    
-    if (enabled && currentVideoElement) {
-      this.updatePlayPauseIcon();
-      this.updateMuteIcon();
-      // Set volume to 100% when video is enabled
-      currentVideoElement.volume = 1.0;
-      if (this.volumeSlider) {
-        this.volumeSlider.value = 100;
-      }
-    }
-  },
-  
-  // Initialize event listeners
-  init() {
-    // Get DOM elements
-    this.playPauseBtn = document.getElementById('playPauseBtn');
-    this.jumpToStartBtn = document.getElementById('jumpToStartBtn');
-    this.rewindBtn = document.getElementById('rewindBtn');
-    this.jumpToEndBtn = document.getElementById('jumpToEndBtn');
-    this.prevFrameBtn = document.getElementById('prevFrameBtn');
-    this.nextFrameBtn = document.getElementById('nextFrameBtn');
-    this.muteBtn = document.getElementById('muteBtn');
-    this.volumeSlider = document.getElementById('volumeSlider');
-    this.playbackMenu = document.getElementById('playbackMenu');
-    
-    // Check if elements exist
-    if (!this.playPauseBtn || !this.jumpToStartBtn || !this.rewindBtn || !this.jumpToEndBtn || !this.muteBtn) {
-      console.error('Playback control elements not found', {
-        playPauseBtn: !!this.playPauseBtn,
-        jumpToStartBtn: !!this.jumpToStartBtn,
-        rewindBtn: !!this.rewindBtn,
-        jumpToEndBtn: !!this.jumpToEndBtn,
-        muteBtn: !!this.muteBtn
-      });
-      return;
-    }
-    
-    // Bind event listeners with proper context
-    this.playPauseBtn.addEventListener('click', (e) => {
-      console.log('Play/Pause button clicked');
-      this.togglePlayPause();
-    }, true); // Use capture phase
-    
-    this.jumpToStartBtn.addEventListener('click', (e) => {
-      console.log('Jump to start button clicked');
-      this.jumpToStart();
-    }, true);
-    
-    this.rewindBtn.addEventListener('click', (e) => {
-      console.log('Rewind button clicked');
-      this.jumpSeconds(-this.TIME_JUMP_AMOUNT);
-    }, true);
-    
-    this.jumpToEndBtn.addEventListener('click', (e) => {
-      console.log('Forward button clicked');
-      this.jumpSeconds(this.TIME_JUMP_AMOUNT);
-    }, true);
-    
-    // Frame navigation buttons
-    if (this.prevFrameBtn) {
-      this.prevFrameBtn.addEventListener('click', (e) => {
-        console.log('Previous frame button clicked');
-        this.jumpPreviousFrame();
-      }, true);
-    }
-    
-    if (this.nextFrameBtn) {
-      this.nextFrameBtn.addEventListener('click', (e) => {
-        console.log('Next frame button clicked');
-        this.jumpNextFrame();
-      }, true);
-    }
-    
-    this.muteBtn.addEventListener('click', (e) => {
-      console.log('Mute button clicked');
-      this.toggleMute();
-    }, true);
-    
-    // Volume slider event listener
-    if (this.volumeSlider) {
-      this.volumeSlider.addEventListener('input', (e) => {
-        const volume = parseInt(e.target.value);
-        this.updateVolume(volume);
-      }, true);
-    }
-    
-    // Ensure buttons are clickable
-    this.playPauseBtn.style.pointerEvents = 'auto';
-    this.jumpToStartBtn.style.pointerEvents = 'auto';
-    this.rewindBtn.style.pointerEvents = 'auto';
-    this.jumpToEndBtn.style.pointerEvents = 'auto';
-    if (this.prevFrameBtn) {
-      this.prevFrameBtn.style.pointerEvents = 'auto';
-    }
-    if (this.nextFrameBtn) {
-      this.nextFrameBtn.style.pointerEvents = 'auto';
-    }
-    this.muteBtn.style.pointerEvents = 'auto';
-    if (this.volumeSlider) {
-      this.volumeSlider.style.pointerEvents = 'auto';
-    }
-    
-    // Make sure buttons aren't disabled unless needed
-    if (!this.playPauseBtn.disabled) {
-      console.log('Playback controls initialized successfully');
-    }
-    
-    // Initialize state
-    this.setEnabled(!!currentVideoElement);
-  }
-};
+// Initialize playback controls instance
+let playbackControls = null;
 
-// Keyboard controls for video playback
-function setupKeyboardControls() {
-  document.addEventListener('keydown', (e) => {
-    // Don't handle keys if user is typing in an input field
-    const activeElement = document.activeElement;
-    const isInputFocused = activeElement && (
-      activeElement.tagName === 'INPUT' ||
-      activeElement.tagName === 'TEXTAREA' ||
-      activeElement.tagName === 'SELECT' ||
-      activeElement.isContentEditable
-    );
-    
-    // Only handle keys if a video is loaded and user is not typing
-    if (!currentVideoElement || isInputFocused) {
-      return;
-    }
-    
-    // Handle keyboard shortcuts
-    switch (e.key.toLowerCase()) {
-      case ' ': // Spacebar - play/pause
-        e.preventDefault(); // Prevent page scroll
-        playbackControls.togglePlayPause();
-        break;
-      case 'j': // J - go back 10 seconds
-        e.preventDefault();
-        playbackControls.jumpSeconds(-10);
-        break;
-      case 'k': // K - play/pause
-        e.preventDefault();
-        playbackControls.togglePlayPause();
-        break;
-      case 'l': // L - go forward 10 seconds
-        e.preventDefault();
-        playbackControls.jumpSeconds(10);
-        break;
-      case 'h': // H - go to beginning
-        e.preventDefault();
-        playbackControls.jumpToStart();
-        break;
-      case 'm': // M - mute/unmute
-        e.preventDefault();
-        playbackControls.toggleMute();
-        break;
-    }
+// Initialize MediaManager
+function initializeMediaManager() {
+  mediaManager = new MediaManager({
+    material: material,
+    ledsGroup: ledsGroup,
+    updateLEDShaders: updateLEDShaders,
+    overlayVideo: overlayVideo,
+    overlayImage: overlayImage,
+    mapping: mapping,
+    frameInfo: frameInfo,
+    stillInfo: stillInfo,
+    timelineContainer: timelineContainer,
+    timelineSlider: timelineSlider,
+    textureStatus: textureStatus,
+    showMappingCheckbox: showMappingCheckbox,
+    showFileInfoCheckbox: showFileInfoCheckbox,
+    playbackControls: playbackControls,
+    updateFrameInfo: updateFrameInfo,
+    updatePlaybackButtons: updatePlaybackButtons,
+    updatePlayPauseButton: updatePlayPauseButton,
+    updateMuteButton: updateMuteButton,
+    updateStillInfo: updateStillInfo,
+    videoAssetSelect: videoAssetSelect
   });
 }
 
 // Initialize playback controls when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    playbackControls.init();
-    setupKeyboardControls();
-    // Make playback menu draggable after initialization
-    if (playbackControls.playbackMenu) {
-      makePanelDraggable(playbackControls.playbackMenu, 'playback');
-      playbackControls.playbackMenu.style.cursor = 'grab';
-    }
-    // Make file info top draggable
-    const fileInfoTop = document.getElementById('fileInfoTop');
-    if (fileInfoTop) {
-      makePanelDraggable(fileInfoTop, 'fileInfo');
-      fileInfoTop.style.cursor = 'grab';
-    }
-  });
-} else {
+function initializePlaybackControls() {
+  // Initialize MediaManager first
+  initializeMediaManager();
+  
+  // Get initial video element from MediaManager (will be null initially)
+  const initialVideoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+  const initialFrameRate = mediaManager ? mediaManager.getVideoFrameRate() : 30;
+  
+  playbackControls = new PlaybackControls(initialVideoElement, overlayVideo, initialFrameRate, updateFrameInfo);
   playbackControls.init();
-  setupKeyboardControls();
+  setupKeyboardControls(playbackControls);
+  
+  // Update MediaManager with playbackControls reference
+  if (mediaManager) {
+    mediaManager.playbackControls = playbackControls;
+  }
+  
   // Make playback menu draggable after initialization
-  if (playbackControls.playbackMenu) {
-    makePanelDraggable(playbackControls.playbackMenu, 'playback');
+  if (playbackControls && playbackControls.playbackMenu) {
+    panelManager.registerPanel(playbackControls.playbackMenu, 'playback');
     playbackControls.playbackMenu.style.cursor = 'grab';
   }
+  
   // Make file info top draggable
-  const fileInfoTop = document.getElementById('fileInfoTop');
+  const fileInfoTop = getElement('fileInfoTop');
   if (fileInfoTop) {
-    makePanelDraggable(fileInfoTop, 'fileInfo');
+    panelManager.registerPanel(fileInfoTop, 'fileInfo');
     fileInfoTop.style.cursor = 'grab';
   }
 }
 
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializePlaybackControls);
+} else {
+  initializePlaybackControls();
+}
+
 // Update button states based on video availability (wrapper for compatibility)
 function updatePlaybackButtons() {
-  playbackControls.setEnabled(currentVideoElement !== null);
+  if (playbackControls && mediaManager) {
+    playbackControls.setEnabled(mediaManager.getCurrentVideoElement() !== null);
+  }
 }
 
 // Wrapper functions for backwards compatibility
 function updatePlayPauseButton() {
-  playbackControls.updatePlayPauseIcon();
+  if (playbackControls) {
+    playbackControls.updatePlayPauseIcon();
+  }
 }
 
 function updateMuteButton() {
-  playbackControls.updateMuteIcon();
+  if (playbackControls) {
+    playbackControls.updateMuteIcon();
+  }
 }
-
-// Initialize button states
-updatePlaybackButtons();
-
-// WebSocket connection for frame streaming
-let ndiWebSocket = null;
-let canvasTexture = null;
-let frameCanvas = null;
-let frameContext = null;
 
 // Function to load NDI stream as texture using WebSocket + Canvas
 function loadNDIStream(streamName) {
+  if (!mediaManager) {
+    console.error('MediaManager not initialized');
+    return;
+  }
+  mediaManager.loadNDIStream(streamName);
+}
+
+// Legacy function wrapper - replaced by MediaManager
+function loadNDIStream_OLD(streamName) {
   // Hide file info displays for NDI streams
   if (frameInfo) frameInfo.classList.remove('active');
   if (stillInfo) stillInfo.classList.remove('active');
@@ -3618,7 +1826,7 @@ function loadNDIStream(streamName) {
     material.uniforms.uHasTexture.value = 0.0;
     
     // Update LED shaders (clear texture)
-    updateLEDShaders();
+    updateLEDShaders(ledsGroup, material);
   material.needsUpdate = true;
   
   // Hide overlay and frame info until new stream is loaded
@@ -3630,8 +1838,8 @@ function loadNDIStream(streamName) {
     overlayImage.src = '';
   
   // Hide playback menu until stream is loaded
-  if (playbackMenu) {
-    playbackMenu.style.display = 'none';
+  if (playbackControls && playbackControls.playbackMenu) {
+    playbackControls.playbackMenu.style.display = 'none';
   }
   
   // Update status
@@ -3697,7 +1905,7 @@ function loadNDIStream(streamName) {
             material.uniforms.uIsImageTexture.value = 0.0; // NDI stream is video, not image
             
             // Update LED shaders with the new texture
-            updateLEDShaders();
+            updateLEDShaders(ledsGroup, material);
             material.needsUpdate = true;
             console.log('NDI stream texture applied to plane via Canvas');
           }
@@ -3751,19 +1959,92 @@ function loadNDIStream(streamName) {
 // Default video path
 const DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12_55FP.mp4';
 
+// Function to load checkerboard texture
+function loadCheckerboardTexture() {
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    '/assets/textures/UVGrid55to1.png',
+    // onLoad callback
+    (texture) => {
+      // Apply texture to shader material
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      
+      material.uniforms.uTexture.value = texture;
+      material.uniforms.uHasTexture.value = 1.0;
+      material.uniforms.uIsImageTexture.value = 1.0;
+      
+      // Update LED shaders with the checkerboard texture
+      updateLEDShaders(ledsGroup, material);
+      
+      // Hide overlay
+      if (overlayImage) overlayImage.style.display = 'none';
+      if (overlayVideo) overlayVideo.style.display = 'none';
+      
+      // Hide frame info and timeline for checkerboard
+      if (frameInfo) frameInfo.classList.remove('active');
+      if (timelineContainer) timelineContainer.classList.remove('active');
+      if (stillInfo) stillInfo.classList.remove('active');
+      
+      // Hide playback menu for checkerboard
+      if (playbackControls && playbackControls.playbackMenu) {
+        playbackControls.playbackMenu.style.display = 'none';
+      }
+      
+      // Show mapping overlay if checkbox is checked
+      if (showMappingCheckbox && showMappingCheckbox.checked && mapping) {
+        mapping.classList.add('active');
+      }
+      
+      if (textureStatus) {
+        textureStatus.textContent = 'Loaded: Checkerboard';
+        textureStatus.classList.add('loaded');
+      }
+    },
+    // onProgress callback (optional)
+    undefined,
+    // onError callback
+    (error) => {
+      console.error('Error loading checkerboard texture:', error);
+      if (textureStatus) {
+        textureStatus.textContent = 'Error loading checkerboard texture';
+        textureStatus.classList.remove('loaded');
+      }
+      alert('Error loading checkerboard texture. Please ensure UVGrid55to1.png exists in /assets/textures/');
+    }
+  );
+}
+
 // Video assets dropdown
-const videoAssetSelect = document.getElementById('videoAssetSelect');
 if (videoAssetSelect) {
   videoAssetSelect.addEventListener('change', (e) => {
-    const selectedVideo = e.target.value;
-    if (selectedVideo) {
-      loadVideoFromPath(selectedVideo);
-      // Reset file input
-      if (textureInput) {
-        textureInput.value = '';
+    const selectedValue = e.target.value;
+    console.log('Video asset selected:', selectedValue);
+    if (selectedValue) {
+      if (selectedValue === 'checkerboard') {
+        console.log('Loading checkerboard texture...');
+        loadCheckerboardTexture();
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
+      } else {
+        console.log('Loading video from dropdown selection...');
+        loadVideoFromPath(selectedValue);
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
       }
+    } else {
+      console.log('No video selected (empty value)');
     }
   });
+  console.log('Video asset select dropdown initialized');
+} else {
+  console.error('Video asset select dropdown not found!');
 }
 
 // Handle show file info checkbox
@@ -3783,7 +2064,8 @@ if (showFileInfoCheckbox) {
     }
     
     // Update frameInfo visibility for videos
-    if (currentVideoElement && frameInfo) {
+    const videoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+    if (videoElement && frameInfo) {
       if (isChecked) {
         frameInfo.classList.add('active');
       } else {
@@ -3844,6 +2126,20 @@ if (fileInfoSizeSlider && fileInfoSizeValue) {
 
 // Function to load video from path
 function loadVideoFromPath(videoPath) {
+  if (!mediaManager) {
+    console.error('MediaManager not initialized');
+    return;
+  }
+  mediaManager.loadVideoFromPath(videoPath);
+  // Update global reference for backwards compatibility
+  if (playbackControls && mediaManager.getCurrentVideoElement()) {
+    playbackControls.setVideoElement(mediaManager.getCurrentVideoElement(), overlayVideo);
+    playbackControls.setFrameRate(mediaManager.getVideoFrameRate());
+  }
+}
+
+// Legacy function wrapper - replaced by MediaManager
+function loadVideoFromPath_OLD(videoPath) {
   // Store current video path
   currentVideoPath = videoPath;
   currentImagePath = null; // Clear image path when loading video
@@ -3869,8 +2165,8 @@ function loadVideoFromPath(videoPath) {
     overlayImage.src = '';
   
   // Hide playback menu until video is loaded
-  if (playbackMenu) {
-    playbackMenu.style.display = 'none';
+  if (playbackControls && playbackControls.playbackMenu) {
+    playbackControls.playbackMenu.style.display = 'none';
   }
 
   // Determine video URL
@@ -3894,6 +2190,35 @@ function loadVideoFromPath(videoPath) {
   video.muted = true; // Start muted for autoplay to work (browser policy)
   video.volume = 1.0; // Set volume to 100%
   video.playsInline = true;
+  video.preload = 'auto'; // Ensure video preloads
+  
+  console.log('Loading video from URL:', videoUrl);
+  console.log('Video element created:', {
+    src: video.src,
+    crossOrigin: video.crossOrigin,
+    loop: video.loop,
+    muted: video.muted
+  });
+  
+  // Add event listeners for debugging
+  video.addEventListener('loadstart', () => {
+    console.log('Video loadstart event fired');
+  });
+  
+  video.addEventListener('progress', () => {
+    console.log('Video progress:', {
+      buffered: video.buffered.length > 0 ? `${video.buffered.start(0)}-${video.buffered.end(0)}` : 'none',
+      readyState: video.readyState
+    });
+  });
+  
+  video.addEventListener('canplay', () => {
+    console.log('Video canplay event fired');
+  });
+  
+  video.addEventListener('canplaythrough', () => {
+    console.log('Video canplaythrough event fired');
+  });
   
   // Adjust mapping overlay to match video aspect ratio as soon as metadata is available
   // Add listener immediately (before loadeddata) to catch the event
@@ -3928,7 +2253,7 @@ function loadVideoFromPath(videoPath) {
     material.needsUpdate = true;
     
     // Update LED shaders with the new video texture
-    updateLEDShaders();
+    updateLEDShaders(ledsGroup, material);
     
     // Set up overlay video to show current frame
     overlayVideo.src = videoUrl;
@@ -3978,8 +2303,8 @@ function loadVideoFromPath(videoPath) {
     timelineContainer.classList.add('active');
     
     // Show playback menu for videos
-    if (playbackMenu) {
-      playbackMenu.style.display = 'block';
+    if (playbackControls && playbackControls.playbackMenu) {
+      playbackControls.playbackMenu.style.display = 'block';
     }
     // Initialize timeline max value
     if (isFinite(video.duration) && video.duration > 0) {
@@ -4006,6 +2331,21 @@ function loadVideoFromPath(videoPath) {
     }
     
     currentVideoElement = video;
+    console.log('Video loaded successfully:', {
+      duration: video.duration,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      readyState: video.readyState
+    });
+    
+    // Update playback controls with new video element
+    if (playbackControls) {
+      playbackControls.setVideoElement(video, overlayVideo);
+      playbackControls.setFrameRate(videoFrameRate);
+      console.log('Playback controls updated with new video');
+    } else {
+      console.warn('Playback controls not initialized yet, video loaded but controls not updated');
+    }
     const fileName = videoPath.split('\\').pop() || videoPath.split('/').pop();
     if (textureStatus) {
       textureStatus.textContent = fileName;
@@ -4022,295 +2362,76 @@ function loadVideoFromPath(videoPath) {
   });
   
   video.addEventListener('error', (error) => {
-    if (textureStatus) {
-    textureStatus.textContent = 'Error loading video (check file path)';
-    textureStatus.classList.remove('loaded');
+    console.error('Video loading error:', error);
+    console.error('Video element error details:', {
+      error: video.error,
+      errorCode: video.error ? video.error.code : null,
+      errorMessage: video.error ? video.error.message : null,
+      networkState: video.networkState,
+      readyState: video.readyState,
+      src: video.src,
+      currentSrc: video.currentSrc
+    });
+    
+    // Network state codes: 0=EMPTY, 1=IDLE, 2=LOADING, 3=NO_SOURCE
+    // Error codes: 1=MEDIA_ERR_ABORTED, 2=MEDIA_ERR_NETWORK, 3=MEDIA_ERR_DECODE, 4=MEDIA_ERR_SRC_NOT_SUPPORTED
+    if (video.error) {
+      const errorMessages = {
+        1: 'Video loading aborted',
+        2: 'Network error while loading video',
+        3: 'Video decoding error',
+        4: 'Video source not supported or not found'
+      };
+      const errorMsg = errorMessages[video.error.code] || 'Unknown error';
+      console.error(`Video error ${video.error.code}: ${errorMsg}`);
     }
-    console.error('Error loading video:', error);
+    
+    if (textureStatus) {
+      const errorMsg = video.error ? `${video.error.code}: ${video.error.message || 'Unknown error'}` : 'Unknown error';
+      textureStatus.textContent = `Error loading video: ${errorMsg} (URL: ${videoUrl})`;
+      textureStatus.classList.remove('loaded');
+    }
+    // Show playback menu even on error so user can see controls
+    if (playbackControls && playbackControls.playbackMenu) {
+      playbackControls.playbackMenu.style.display = 'block';
+    }
   });
   
   // Start loading the video
+  console.log('Calling video.load()...');
   video.load();
+  console.log('Video.load() called, waiting for events...');
 }
 
-textureInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  // Store current video path (filename for uploaded files)
-  currentVideoPath = file.name;
-  
-  // Reset video asset dropdown when file is selected
-  if (videoAssetSelect) {
-    videoAssetSelect.value = '';
-  }
-
-  // Clean up previous video element if it exists
-  if (currentVideoElement) {
-    currentVideoElement.pause();
-    currentVideoElement.src = '';
-    currentVideoElement.load();
-    currentVideoElement = null;
-    updatePlaybackButtons();
-  }
-  
-  // Hide overlay and frame info until new video is loaded
-  mapping.classList.remove('active');
-        frameInfo.classList.remove('active');
-        if (stillInfo) stillInfo.classList.remove('active');
-        timelineContainer.classList.remove('active');
-        overlayVideo.src = '';
-        overlayImage.src = '';
-
-  // Check if it's a video file
-  if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4')) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const videoUrl = event.target.result;
-      
-      // Create video element
-      const video = document.createElement('video');
-      video.src = videoUrl;
-      video.crossOrigin = 'anonymous';
-      video.loop = true;
-      video.muted = true; // Start muted for autoplay to work (browser policy)
-      video.volume = 1.0; // Set volume to 100%
-      video.playsInline = true;
-      
-      video.addEventListener('loadeddata', () => {
-        // Try to get frame rate from video metadata (default to 30fps)
-        videoFrameRate = 30; // Default, could be improved with actual video metadata
-        
-        // Create video texture
-        const videoTexture = new THREE.VideoTexture(video);
-        videoTexture.wrapS = THREE.RepeatWrapping;
-        videoTexture.wrapT = THREE.RepeatWrapping;
-        videoTexture.minFilter = THREE.LinearFilter;
-        videoTexture.magFilter = THREE.LinearFilter;
-        videoTexture.colorSpace = THREE.SRGBColorSpace; // Use sRGB for accurate colors
-        videoTexture.flipY = true; // Flip Y to match Three.js coordinate system
-        
-        // Apply texture to shader material
-        material.uniforms.uTexture.value = videoTexture;
-        material.uniforms.uHasTexture.value = 1.0;
-        material.uniforms.uIsImageTexture.value = 0.0; // Mark as video texture
-        material.needsUpdate = true;
-        
-        // Update LED shaders with the new video texture
-        updateLEDShaders();
-        
-        // Set up overlay video to show current frame
-        overlayVideo.src = videoUrl;
-        overlayVideo.crossOrigin = 'anonymous';
-        overlayVideo.loop = true;
-        overlayVideo.muted = true;
-        overlayVideo.playsInline = true;
-        overlayVideo.style.display = 'block';
-        overlayImage.style.display = 'none';
-        
-        // Adjust mapping overlay to match video aspect ratio
-        // Use the main video element dimensions for more accurate aspect ratio
-        video.addEventListener('loadedmetadata', () => {
-          if (video.videoWidth && video.videoHeight) {
-            adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
-          }
-        });
-        // Also listen to overlayVideo as fallback
-        overlayVideo.addEventListener('loadedmetadata', () => {
-          if (overlayVideo.videoWidth && overlayVideo.videoHeight && (!video.videoWidth || !video.videoHeight)) {
-            adjustMappingAspectRatio(overlayVideo.videoWidth, overlayVideo.videoHeight);
-          }
-        });
-        
-        // Sync overlay video with main video
-        const syncOverlay = () => {
-          if (video.readyState >= 2) {
-            overlayVideo.currentTime = video.currentTime;
-            updateFrameInfo(video);
-          }
-        };
-        
-        // Sync on timeupdate
-        video.addEventListener('timeupdate', syncOverlay);
-        
-        // Show frame info and timeline for videos
-        if (showFileInfoCheckbox && showFileInfoCheckbox.checked) {
-          frameInfo.classList.add('active');
-        }
-        if (stillInfo) stillInfo.classList.remove('active');
-        timelineContainer.classList.add('active');
-        
-        // Show playback menu for videos
-        if (playbackMenu) {
-          playbackMenu.style.display = 'block';
-        }
-        
-        // Initialize timeline max value
-        if (isFinite(video.duration) && video.duration > 0) {
-          timelineSlider.max = 100;
-        }
-        updateFrameInfo(video);
-        
-        // Show overlay if checkbox is checked
-        if (showMappingCheckbox.checked) {
-          mapping.classList.add('active');
-        }
-        
-        // Play both videos
-        const playPromise = video.play();
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            overlayVideo.play().catch(err => {
-              console.error('Error playing overlay video:', err);
-            });
-            updatePlayPauseButton();
-            updateMuteButton();
-          }).catch(err => {
-            console.error('Error playing video:', err);
-            // If autoplay fails, don't show error - user can click play manually
-            // The video is still loaded and ready to play
-            updatePlayPauseButton();
-            updateMuteButton();
-          });
-        }
-        
-        currentVideoElement = video;
-        
-        // Reset video asset dropdown when file is loaded
-        if (videoAssetSelect) {
-          videoAssetSelect.value = '';
-        }
-        
-        updatePlaybackButtons(); // Enable playback controls
-        if (textureStatus) {
-          textureStatus.textContent = file.name;
-        textureStatus.classList.add('loaded');
-        }
-      });
-      
-      video.addEventListener('error', (error) => {
-        if (textureStatus) {
-        textureStatus.textContent = 'Error loading video';
-        textureStatus.classList.remove('loaded');
-        }
-        console.error('Error loading video:', error);
-      });
-      
-      // Start loading the video
-      video.load();
-    };
-
-    reader.onerror = () => {
+if (textureInput) {
+  textureInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!mediaManager) {
+      console.error('MediaManager not initialized');
+      return;
+    }
+    
+    // Check if it's a video file
+    if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4')) {
+      mediaManager.loadVideoFromFile(file);
+      // Update playback controls
+      if (playbackControls && mediaManager.getCurrentVideoElement()) {
+        playbackControls.setVideoElement(mediaManager.getCurrentVideoElement(), overlayVideo);
+        playbackControls.setFrameRate(mediaManager.getVideoFrameRate());
+      }
+    } else if (file.type.startsWith('image/')) {
+      mediaManager.loadImageFromFile(file);
+    } else {
       if (textureStatus) {
-        if (textureStatus) {
-      textureStatus.textContent = 'Error reading file';
-      textureStatus.classList.remove('loaded');
-        }
-      }
-    };
-
-    reader.readAsDataURL(file);
-    return;
-  }
-
-  // Handle image files
-  if (!file.type.startsWith('image/')) {
-    if (textureStatus) {
-    textureStatus.textContent = 'Error: Please select an image or video file';
-    textureStatus.classList.remove('loaded');
-    }
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const imageUrl = event.target.result;
-    
-    // Create texture loader
-    const loader = new THREE.TextureLoader();
-    
-    loader.load(
-      imageUrl,
-      // onLoad callback
-      (texture) => {
-        // Apply texture to plane material
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        // Don't set colorSpace for images - we'll handle conversion manually in shader
-        // This prevents Three.js from doing automatic conversion that doesn't work with custom shaders
-        
-        // Apply texture to shader material
-        material.uniforms.uTexture.value = texture;
-        material.uniforms.uHasTexture.value = 1.0;
-        
-        // Update LED shaders with the new texture
-        updateLEDShaders();
-        material.uniforms.uIsImageTexture.value = 1.0; // Mark as image texture
-        
-        // Show image in mapping overlay
-        overlayImage.src = imageUrl;
-        overlayImage.style.display = 'block';
-        overlayVideo.style.display = 'none';
-        
-        // Adjust mapping overlay to match image aspect ratio
-        overlayImage.onload = () => {
-          if (overlayImage.naturalWidth && overlayImage.naturalHeight) {
-            adjustMappingAspectRatio(overlayImage.naturalWidth, overlayImage.naturalHeight);
-          }
-        };
-        
-        // Store current image path
-        currentImagePath = file.name;
-        
-        // Hide frame info and timeline for images (only show for videos)
-        frameInfo.classList.remove('active');
-        timelineContainer.classList.remove('active');
-        
-        // Show still info for images
-        updateStillInfo(file);
-        
-        // Hide playback menu for images
-        if (playbackMenu) {
-          playbackMenu.style.display = 'none';
-        }
-        
-        // Show mapping overlay if checkbox is checked
-        if (showMappingCheckbox.checked) {
-          mapping.classList.add('active');
-        }
-        
-        // Disable playback buttons for images
-        updatePlaybackButtons();
-        
-        if (textureStatus) {
-        textureStatus.textContent = `Loaded: ${file.name}`;
-        textureStatus.classList.add('loaded');
-        }
-      },
-      // onProgress callback (optional)
-      undefined,
-      // onError callback
-      (error) => {
-        if (textureStatus) {
-        textureStatus.textContent = 'Error loading texture';
+        textureStatus.textContent = 'Error: Please select an image or video file';
         textureStatus.classList.remove('loaded');
-        }
-        console.error('Error loading texture:', error);
       }
-    );
-  };
-
-  reader.onerror = () => {
-    if (textureStatus) {
-    textureStatus.textContent = 'Error reading file';
-    textureStatus.classList.remove('loaded');
     }
-  };
+  });
+}
 
-  reader.readAsDataURL(file);
-});
 
 // Camera debug panel elements
 const cameraPosX = document.getElementById('cameraPosX');
@@ -4512,85 +2633,22 @@ if (loadCameraBtn) {
   loadCameraBtn.disabled = true;
 }
 
-// Camera position presets
-const cameraPositions = [
-  {
-    position: { x: -1.63, y: 4.54, z: 65.35 },
-    rotation: { x: -1.52, y: -2.01, z: 0 },
-    target: { x: 0.67, y: 2.81, z: 0.15 }
-  },
-  {
-    position: { x: -28.71, y: 9.17, z: 37.13 },
-    rotation: { x: -9.76, y: -38.05, z: -6.06 },
-    target: { x: 0.67, y: 2.81, z: 0.15 }
-  },
-  {
-    position: { x: 0, y: 7.8638, z: 48.918 },
-    rotation: { x: 0, y: 0, z: 0 },
-    target: { x: 0, y: 7.8638, z: 0 }
-  },
-  {
-    position: { x: 7.3, y: 38.62, z: 80.96 },
-    rotation: { x: -25.44, y: 2.85, z: 1.35 },
-    target: { x: 3.63, y: 6.96, z: 14.39 }
-  }
-];
+// Camera Controls
+// ============================================
+// Initialize camera controls
+let cameraControls = null;
 
-// Function to set camera position and target
-function setCameraPosition(positionIndex) {
-  if (positionIndex < 0 || positionIndex >= cameraPositions.length) {
-    console.error('Invalid camera position index:', positionIndex);
-    return;
-  }
-  
-  const preset = cameraPositions[positionIndex];
-  
-  // Set camera position
-  camera.position.set(preset.position.x, preset.position.y, preset.position.z);
-  
-  // Set OrbitControls target
-  controls.target.set(preset.target.x, preset.target.y, preset.target.z);
-  
-  // If rotation is specified, set it directly (convert degrees to radians)
-  if (preset.rotation) {
-    camera.rotation.set(
-      preset.rotation.x * Math.PI / 180,
-      preset.rotation.y * Math.PI / 180,
-      preset.rotation.z * Math.PI / 180
-    );
-  } else {
-    // Otherwise, look at target (OrbitControls will handle rotation)
-    camera.lookAt(preset.target.x, preset.target.y, preset.target.z);
-  }
-  
-  // Update controls to apply changes immediately
-  controls.update();
-  
-  // Update debug display
-  updateCameraDebug();
+function initializeCameraControls() {
+  cameraControls = new CameraControls(camera, controls, updateCameraDebug);
+  cameraControls.init();
 }
 
-// Add event listeners for camera position buttons
-const cameraPos1Btn = document.getElementById('cameraPos1');
-const cameraPos2Btn = document.getElementById('cameraPos2');
-const cameraPos3Btn = document.getElementById('cameraPos3');
-const cameraPos4Btn = document.getElementById('cameraPos4');
-
-if (cameraPos1Btn) {
-  cameraPos1Btn.addEventListener('click', () => setCameraPosition(0));
+// Initialize camera controls when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeCameraControls);
+} else {
+  initializeCameraControls();
 }
-if (cameraPos2Btn) {
-  cameraPos2Btn.addEventListener('click', () => setCameraPosition(1));
-}
-if (cameraPos3Btn) {
-  cameraPos3Btn.addEventListener('click', () => setCameraPosition(2));
-}
-if (cameraPos4Btn) {
-  cameraPos4Btn.addEventListener('click', () => setCameraPosition(3));
-}
-
-// Set default camera to position 1 after everything is initialized
-setCameraPosition(0);
 
 // Set default video in dropdown
 if (videoAssetSelect) {
@@ -4605,20 +2663,7 @@ function animate() {
   controls.update();
   
   // Update camera position in all shader materials
-  Object.values(shaderMaterials).forEach(shaderMaterial => {
-    if (shaderMaterial.uniforms && shaderMaterial.uniforms.uCameraPosition) {
-      shaderMaterial.uniforms.uCameraPosition.value.copy(camera.position);
-    }
-  });
-  
-  // Update camera position in all cloned materials
-  Object.values(materialReferences).forEach(materialArray => {
-    materialArray.forEach(material => {
-      if (material.uniforms && material.uniforms.uCameraPosition) {
-        material.uniforms.uCameraPosition.value.copy(camera.position);
-      }
-    });
-  });
+  updateCameraPositionInShaders(shaderMaterials, materialReferences, camera);
   
   // Update video texture if it exists (VideoTexture auto-updates, but ensure it's marked)
   if (material.uniforms.uTexture.value) {
@@ -4660,14 +2705,25 @@ window.addEventListener('orientationchange', () => {
 animate();
 
 // Load default video at startup
-// Since this is a module script, DOM is already ready
+// Ensure playback controls are initialized first, then load video
+function loadDefaultVideo() {
+  // Wait a bit to ensure playback controls and MediaManager are initialized
+  if (!playbackControls || !mediaManager) {
+    setTimeout(loadDefaultVideo, 100);
+    return;
+  }
+  console.log('Loading default video:', DEFAULT_VIDEO_PATH);
+  loadVideoFromPath(DEFAULT_VIDEO_PATH);
+}
+
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
-    loadVideoFromPath(DEFAULT_VIDEO_PATH);
+    // Wait for playback controls to initialize
+    setTimeout(loadDefaultVideo, 200);
   });
 } else {
-  // DOM already loaded, call immediately
-  loadVideoFromPath(DEFAULT_VIDEO_PATH);
+  // DOM already loaded, wait a bit for playback controls
+  setTimeout(loadDefaultVideo, 200);
 }
 
 

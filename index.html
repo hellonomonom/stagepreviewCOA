@@ -38,7 +38,6 @@
                                 <select id="sourceTypeSelect" class="dropdown" style="flex: 1; min-width: 180px;">
                                     <option value="texture" selected>Image/Video</option>
                                     <option value="ndi">NDI STREAM (WIP)</option>
-                                    <option value="checkerboard">Checkerboard</option>
                                 </select>
                                 <div class="file-input-wrapper" style="flex-shrink: 0;">
                                     <input 
@@ -56,7 +55,7 @@
                         <div class="control-group" id="textureInputGroup">
                             <label for="videoAssetSelect" class="label">Sample Assets</label>
                             <select id="videoAssetSelect" class="dropdown">
-                                <option value="">Select a video...</option>
+                                <option value="checkerboard">Checkerboard</option>
                                 <option value="/assets/videos/ANYMA_DunDun_55FP.mp4">ANYMA_DunDun_55FP.mp4</option>
                                 <option value="/assets/videos/ANYMA_DunDun_55FP_timecode.mp4">ANYMA_DunDun_55FP_timecode.mp4</option>
                                 <option value="/assets/videos/ANYMA_HumanNow_55FP.mp4">ANYMA_HumanNow_55FP.mp4</option>
@@ -148,7 +147,7 @@
                         </div>
                         <div class="control-group">
                             <label for="crowdInstanceCountSlider" class="label">
-                                Crowd Instances: <span class="value" id="crowdInstanceCountValue">100</span>
+                                Crowd Instances: <span class="value" id="crowdInstanceCountValue">4000</span>
                             </label>
                             <input 
                                 type="range" 
@@ -157,7 +156,7 @@
                                 min="0" 
                                 max="5000" 
                                 step="1" 
-                                value="100"
+                                value="4000"
                             />
                         </div>
                         <div class="control-group">
@@ -615,12 +614,12 @@
                     <button class="playback-btn" id="nextFrameBtn" aria-label="Next frame">
                         <span class="material-icons">navigate_next</span>
                     </button>
-                    <button class="playback-btn" id="muteBtn" aria-label="Mute/Unmute">
-                        <span class="material-icons">volume_up</span>
-                    </button>
                 </div>
                 <!-- Volume Control -->
                 <div class="playback-volume">
+                    <button class="playback-btn" id="muteBtn" aria-label="Mute/Unmute">
+                        <span class="material-icons">volume_up</span>
+                    </button>
                     <input 
                         type="range" 
                         id="volumeSlider" 
