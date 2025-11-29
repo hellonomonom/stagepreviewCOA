@@ -3,14 +3,19 @@
  * Handles LED mesh loading, swapping, and management
  */
 
+import * as THREE from 'three';
 import { ledMeshFiles, correctedWingMeshes } from '../config/meshPaths.js';
 
 export class LEDMapping {
-  constructor(meshLoader, ledsGroup, material, applyBlackToGaragesFn) {
+  constructor(meshLoader, ledsGroup, material, createLEDShaderMaterial, updateLEDShaders) {
     this.meshLoader = meshLoader;
     this.ledsGroup = ledsGroup;
     this.material = material;
-    this.applyBlackToGaragesFn = applyBlackToGaragesFn;
+    this.createLEDShaderMaterial = createLEDShaderMaterial;
+    this.updateLEDShaders = updateLEDShaders;
+    
+    // Black material for garage meshes
+    this.blackMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
     
     // Mesh references
     this.loadedLEDMeshes = [];
@@ -141,19 +146,19 @@ export class LEDMapping {
     // Wait a bit longer to ensure meshes are fully loaded
     setTimeout(() => {
       const blackGaragesCheckbox = document.getElementById('blackGarages');
-      if (blackGaragesCheckbox && blackGaragesCheckbox.checked && this.applyBlackToGaragesFn) {
+      if (blackGaragesCheckbox && blackGaragesCheckbox.checked) {
         // Check if garage meshes are loaded before applying
         const garages = this.getGarageMeshes();
         if (garages.sl || garages.sr) {
           console.log('Restoring black material state for garages after mesh reload');
-          this.applyBlackToGaragesFn(true);
+          this.applyBlackToGarages(true);
         } else {
           console.warn('Garage meshes not loaded yet, retrying...');
           // Retry after a longer delay
           setTimeout(() => {
             const garagesRetry = this.getGarageMeshes();
             if (garagesRetry.sl || garagesRetry.sr) {
-              this.applyBlackToGaragesFn(true);
+              this.applyBlackToGarages(true);
             } else {
               console.error('Garage meshes still not loaded after retry');
             }
@@ -171,6 +176,54 @@ export class LEDMapping {
     if (this.ledFrontMesh) {
       this.ledFrontMesh.visible = visible;
       this.restoreLedFrontVisible = visible;
+    }
+  }
+  
+  /**
+   * Apply black material to garage meshes or restore LED shader material
+   * @param {boolean} apply - Whether to apply black material (true) or restore LED shader (false)
+   */
+  applyBlackToGarages(apply) {
+    const garages = this.getGarageMeshes();
+    const garageMeshes = [garages.sl, garages.sr];
+    
+    console.log('applyBlackToGarages called:', { apply, sl: !!garages.sl, sr: !!garages.sr });
+    
+    let meshCount = 0;
+    garageMeshes.forEach((garageMesh, index) => {
+      if (!garageMesh) {
+        console.warn(`Garage mesh ${index === 0 ? 'SL' : 'SR'} not found`);
+        return;
+      }
+      
+      garageMesh.traverse((child) => {
+        if (child.isMesh) {
+          meshCount++;
+          if (apply) {
+            // Store original material if not already stored
+            if (!child.userData.originalMaterial) {
+              child.userData.originalMaterial = child.material;
+            }
+            // Apply black material
+            child.material = this.blackMaterial;
+            console.log(`Applied black material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
+          } else {
+            // Restore LED shader material (always create fresh to ensure uniforms are current)
+            // Pass the texture material reference to createLEDShaderMaterial
+            child.material = this.createLEDShaderMaterial(this.material);
+            // Update shader with current texture
+            this.updateLEDShaders(this.ledsGroup, this.material);
+            child.userData.originalMaterial = null;
+            console.log(`Restored LED shader material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
+          }
+        }
+      });
+    });
+    
+    if (meshCount === 0) {
+      console.warn('No meshes found in garage meshes. They may not be loaded yet.');
+    } else {
+      console.log(`Processed ${meshCount} meshes in garage meshes`);
     }
   }
 }

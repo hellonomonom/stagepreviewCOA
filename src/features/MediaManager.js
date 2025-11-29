@@ -28,6 +28,10 @@ export class MediaManager {
     this.updateMuteButton = options.updateMuteButton;
     this.updateStillInfo = options.updateStillInfo;
     this.videoAssetSelect = options.videoAssetSelect;
+    this.adjustMappingAspectRatioCallback = options.adjustMappingAspectRatio;
+    
+    // OverlayManager reference (set after initialization)
+    this.overlayManager = null;
     
     // State
     this.currentVideoElement = null;
@@ -46,37 +50,13 @@ export class MediaManager {
   
   /**
    * Adjust mapping overlay to match aspect ratio
+   * Delegates to OverlayManager if available, otherwise uses callback
    */
   adjustMappingAspectRatio(width, height) {
-    const maxWidth = 400;
-    const maxHeight = 300;
-    const minWidth = 200;
-    const minHeight = 100;
-    
-    const aspectRatio = width / height;
-    
-    let overlayWidth, overlayHeight;
-    
-    overlayWidth = maxWidth;
-    overlayHeight = overlayWidth / aspectRatio;
-    
-    if (overlayHeight > maxHeight) {
-      overlayHeight = maxHeight;
-      overlayWidth = overlayHeight * aspectRatio;
-    }
-    
-    if (overlayWidth < minWidth) {
-      overlayWidth = minWidth;
-      overlayHeight = overlayWidth / aspectRatio;
-    }
-    if (overlayHeight < minHeight) {
-      overlayHeight = minHeight;
-      overlayWidth = overlayHeight * aspectRatio;
-    }
-    
-    if (this.mapping) {
-      this.mapping.style.width = `${overlayWidth}px`;
-      this.mapping.style.height = `${overlayHeight}px`;
+    if (this.overlayManager) {
+      this.overlayManager.adjustMappingAspectRatio(width, height);
+    } else if (this.adjustMappingAspectRatioCallback && typeof this.adjustMappingAspectRatioCallback === 'function') {
+      this.adjustMappingAspectRatioCallback(width, height);
     }
   }
   

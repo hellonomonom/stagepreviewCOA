@@ -42,7 +42,14 @@ export class PanelManager {
       const isInteractive = target.tagName === 'INPUT' || 
                            target.tagName === 'SELECT' || 
                            target.tagName === 'BUTTON' ||
-                           (target.tagName === 'LABEL' && target.getAttribute('for'));
+                           (target.tagName === 'LABEL' && target.getAttribute('for')) ||
+                           // Exclude toggle buttons and their children (icons, spans, etc.)
+                           target.closest('.settings-panel-toggle') ||
+                           target.closest('.style-shader-panel-toggle') ||
+                           target.closest('.camera-panel-toggle') ||
+                           target.closest('.playback-menu-toggle') ||
+                           target.closest('button[aria-label*="Minimize"]') ||
+                           target.closest('button[aria-label*="Maximize"]');
       
       if (!isInteractive && (
         target === panel || 

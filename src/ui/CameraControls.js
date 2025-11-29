@@ -6,10 +6,9 @@
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from '../config/cameraPresets.js';
 
 export class CameraControls {
-  constructor(camera, controls, updateCameraDebug) {
+  constructor(camera, controls) {
     this.camera = camera;
     this.controls = controls;
-    this.updateCameraDebug = updateCameraDebug;
     this.storedCameraState = null;
     
     // DOM Elements
@@ -20,6 +19,45 @@ export class CameraControls {
     this.copyCameraBtn = null;
     this.storeCameraBtn = null;
     this.loadCameraBtn = null;
+    
+    // Debug panel elements
+    this.cameraPosX = null;
+    this.cameraPosY = null;
+    this.cameraPosZ = null;
+    this.cameraRotX = null;
+    this.cameraRotY = null;
+    this.cameraRotZ = null;
+    this.cameraTargetX = null;
+    this.cameraTargetY = null;
+    this.cameraTargetZ = null;
+    this.cameraDebugPanel = null;
+    this.showCameraDebugPanelCheckbox = null;
+  }
+  
+  /**
+   * Update camera debug info display
+   */
+  updateCameraDebug() {
+    if (this.cameraPosX && this.cameraPosY && this.cameraPosZ) {
+      // Position
+      this.cameraPosX.textContent = this.camera.position.x.toFixed(2);
+      this.cameraPosY.textContent = this.camera.position.y.toFixed(2);
+      this.cameraPosZ.textContent = this.camera.position.z.toFixed(2);
+    }
+    
+    if (this.cameraRotX && this.cameraRotY && this.cameraRotZ) {
+      // Rotation (Euler angles in radians, converted to degrees)
+      this.cameraRotX.textContent = (this.camera.rotation.x * 180 / Math.PI).toFixed(2);
+      this.cameraRotY.textContent = (this.camera.rotation.y * 180 / Math.PI).toFixed(2);
+      this.cameraRotZ.textContent = (this.camera.rotation.z * 180 / Math.PI).toFixed(2);
+    }
+    
+    if (this.cameraTargetX && this.cameraTargetY && this.cameraTargetZ) {
+      // OrbitControls target
+      this.cameraTargetX.textContent = this.controls.target.x.toFixed(2);
+      this.cameraTargetY.textContent = this.controls.target.y.toFixed(2);
+      this.cameraTargetZ.textContent = this.controls.target.z.toFixed(2);
+    }
   }
   
   /**
@@ -56,28 +94,45 @@ export class CameraControls {
     this.controls.update();
     
     // Update debug display
-    if (this.updateCameraDebug) {
-      this.updateCameraDebug();
-    }
+    this.updateCameraDebug();
   }
   
   /**
    * Copy camera values to clipboard
    */
-  async copyCameraValues() {
-    const position = this.camera.position;
-    const rotation = this.camera.rotation;
-    const target = this.controls.target;
+  copyCameraValues() {
+    const pos = {
+      x: parseFloat(this.camera.position.x.toFixed(2)),
+      y: parseFloat(this.camera.position.y.toFixed(2)),
+      z: parseFloat(this.camera.position.z.toFixed(2))
+    };
     
-    // Format as JavaScript object
-    const textFormat = `{
-  position: { x: ${position.x.toFixed(2)}, y: ${position.y.toFixed(2)}, z: ${position.z.toFixed(2)} },
-  rotation: { x: ${(rotation.x * 180 / Math.PI).toFixed(2)}, y: ${(rotation.y * 180 / Math.PI).toFixed(2)}, z: ${(rotation.z * 180 / Math.PI).toFixed(2)} },
-  target: { x: ${target.x.toFixed(2)}, y: ${target.y.toFixed(2)}, z: ${target.z.toFixed(2)} }
-}`;
+    const rot = {
+      x: parseFloat((this.camera.rotation.x * 180 / Math.PI).toFixed(2)),
+      y: parseFloat((this.camera.rotation.y * 180 / Math.PI).toFixed(2)),
+      z: parseFloat((this.camera.rotation.z * 180 / Math.PI).toFixed(2))
+    };
     
-    try {
-      await navigator.clipboard.writeText(textFormat);
+    const target = {
+      x: parseFloat(this.controls.target.x.toFixed(2)),
+      y: parseFloat(this.controls.target.y.toFixed(2)),
+      z: parseFloat(this.controls.target.z.toFixed(2))
+    };
+    
+    const cameraData = {
+      position: pos,
+      rotation: rot,
+      target: target
+    };
+    
+    // Format as readable text
+    const textFormat = `Position: (${pos.x}, ${pos.y}, ${pos.z})
+Rotation: (${rot.x}, ${rot.y}, ${rot.z})
+Target: (${target.x}, ${target.y}, ${target.z})`;
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(textFormat).then(() => {
+      // Visual feedback
       const originalText = this.copyCameraBtn.textContent;
       this.copyCameraBtn.textContent = 'Copied!';
       this.copyCameraBtn.style.background = 'var(--color-primary)';
@@ -85,10 +140,10 @@ export class CameraControls {
         this.copyCameraBtn.textContent = originalText;
         this.copyCameraBtn.style.background = '';
       }, 2000);
-    } catch (err) {
+    }).catch(err => {
       console.error('Failed to copy camera values:', err);
       alert('Failed to copy to clipboard. Please copy manually:\n\n' + textFormat);
-    }
+    });
   }
   
   /**
@@ -162,9 +217,7 @@ export class CameraControls {
     this.controls.update();
     
     // Update debug display
-    if (this.updateCameraDebug) {
-      this.updateCameraDebug();
-    }
+    this.updateCameraDebug();
     
     // Visual feedback
     const originalText = this.loadCameraBtn.textContent;
@@ -188,6 +241,34 @@ export class CameraControls {
     this.copyCameraBtn = document.getElementById('copyCameraBtn');
     this.storeCameraBtn = document.getElementById('storeCameraBtn');
     this.loadCameraBtn = document.getElementById('loadCameraBtn');
+    
+    // Debug panel elements
+    this.cameraPosX = document.getElementById('cameraPosX');
+    this.cameraPosY = document.getElementById('cameraPosY');
+    this.cameraPosZ = document.getElementById('cameraPosZ');
+    this.cameraRotX = document.getElementById('cameraRotX');
+    this.cameraRotY = document.getElementById('cameraRotY');
+    this.cameraRotZ = document.getElementById('cameraRotZ');
+    this.cameraTargetX = document.getElementById('cameraTargetX');
+    this.cameraTargetY = document.getElementById('cameraTargetY');
+    this.cameraTargetZ = document.getElementById('cameraTargetZ');
+    this.cameraDebugPanel = document.getElementById('cameraDebugPanel');
+    this.showCameraDebugPanelCheckbox = document.getElementById('showCameraDebugPanel');
+    
+    // Camera debug panel visibility checkbox handler
+    if (this.showCameraDebugPanelCheckbox && this.cameraDebugPanel) {
+      // Initialize as hidden (unchecked by default)
+      this.cameraDebugPanel.classList.add('hidden');
+      this.showCameraDebugPanelCheckbox.checked = false;
+      
+      this.showCameraDebugPanelCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          this.cameraDebugPanel.classList.remove('hidden');
+        } else {
+          this.cameraDebugPanel.classList.add('hidden');
+        }
+      });
+    }
     
     // Set up event listeners
     if (this.cameraPos1Btn) {

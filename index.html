@@ -575,6 +575,7 @@
 
     <!-- Playback Menu -->
     <div class="playback-menu" id="playbackMenu">
+        <button class="playback-menu-toggle" id="playbackMenuToggle" aria-label="Minimize/Maximize">−</button>
         <div class="playback-menu-content">
             
             <!-- Timeline Slider -->
@@ -599,20 +600,20 @@
                     <button class="playback-btn" id="jumpToStartBtn" aria-label="Jump to beginning">
                         <span class="material-icons">skip_previous</span>
                     </button>
-                    <button class="playback-btn" id="prevFrameBtn" aria-label="Previous frame">
-                        <span class="material-icons">navigate_before</span>
-                    </button>
                     <button class="playback-btn" id="rewindBtn" aria-label="Jump back 10 seconds">
                         <span class="material-icons">replay_10</span>
+                    </button>
+                    <button class="playback-btn" id="prevFrameBtn" aria-label="Previous frame">
+                        <span class="material-icons">navigate_before</span>
                     </button>
                     <button class="playback-btn playback-btn-primary" id="playPauseBtn" aria-label="Play/Pause">
                         <span class="material-icons">play_arrow</span>
                     </button>
-                    <button class="playback-btn" id="jumpToEndBtn" aria-label="Jump forward 10 seconds">
-                        <span class="material-icons">forward_10</span>
-                    </button>
                     <button class="playback-btn" id="nextFrameBtn" aria-label="Next frame">
                         <span class="material-icons">navigate_next</span>
+                    </button>
+                    <button class="playback-btn" id="jumpToEndBtn" aria-label="Jump forward 10 seconds">
+                        <span class="material-icons">forward_10</span>
                     </button>
                 </div>
                 <!-- Volume Control -->
