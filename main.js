@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes } from './src/config/meshPaths.js';
 import { shaderConfigs } from './src/config/shaderConfig.js';
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from './src/config/cameraPresets.js';
-import { createShaderMaterials, createTextureShaderMaterial, createLEDShaderMaterial, updateLEDShaders, applyShaderToGroup, updateCameraPositionInShaders } from './src/core/ShaderManager.js';
+import { createShaderMaterials, createTextureShaderMaterial, createLEDShaderMaterial, updateLEDShaders, applyShaderToGroup, updateCameraPositionInShaders, loadMaskTexture } from './src/core/ShaderManager.js';
 import { getShaderType } from './src/utils/shaderUtils.js';
 import { getElement } from './src/utils/domUtils.js';
 import { PlaybackControls, setupKeyboardControls } from './src/ui/PlaybackControls.js';
@@ -169,6 +169,13 @@ meshLoader.setCallbacks({
       console.log('Parented DJ artist mesh to liftable stage');
     }
   }
+});
+
+// Load mask texture on initialization
+loadMaskTexture().then(() => {
+  console.log('Mask texture loaded successfully');
+}).catch((error) => {
+  console.warn('Failed to load mask texture:', error);
 });
 
 // Initialize LED Mapping
@@ -616,7 +623,16 @@ if (mappingTypeSelect) {
     const selectedType = e.target.value;
     currentMappingType = selectedType;
     
+    // Get current state of "hide LED front" checkbox before switching
+    const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
+    
+    // Get current state of "turn garages black" checkbox before switching
+    const blackGaragesCheckbox = document.getElementById('blackGarages');
+    const shouldTurnGaragesBlack = blackGaragesCheckbox ? blackGaragesCheckbox.checked : false;
+    
     // Show/hide corrected mesh checkbox
+    // Hide for FarCam options (A-E) and festival, show only for frontProjection types
     if (correctedMeshGroup) {
       if (selectedType === 'frontProjection' || selectedType === 'frontProjectionPerspective') {
         correctedMeshGroup.style.display = 'block';
@@ -635,34 +651,80 @@ if (mappingTypeSelect) {
     // Swap LED meshes
     loadLEDMeshes(selectedType, useCorrected);
     
-    // Hide front screen by default for Festival Mapping, show for Front Projection types
-    setTimeout(() => {
-      const hideLedFrontCheckbox = document.getElementById('hideLedFront');
-      // Get current LED front mesh from LEDMapping
-      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
-      if (selectedType === 'festival') {
-        // Hide front screen for Festival Mapping
+    // Apply LED front visibility based on checkbox state after meshes load
+    // Use a function that retries if meshes aren't ready yet
+    const applyLEDFrontVisibility = (retryCount = 0) => {
+      const maxRetries = 10;
+      const retryDelay = 200;
+      
+      // Determine desired visibility based on the checkbox state we captured
+      let desiredVisibility = !shouldHideLedFront;
+      
+      // Special handling for festival mapping: default to hidden
+      if (selectedType === 'festival' && !shouldHideLedFront && hideLedFrontCheckbox) {
+        // If checkbox wasn't checked, auto-check it for festival mapping (default behavior)
+        hideLedFrontCheckbox.checked = true;
+        desiredVisibility = false;
+      }
+      
+      // Check if meshes are loaded by checking if ledsGroup has any mesh children (including nested)
+      let hasMeshes = false;
+      if (ledsGroup) {
+        ledsGroup.traverse((child) => {
+          if (child.isMesh) {
+            hasMeshes = true;
+          }
+        });
+      }
+      
+      if (!hasMeshes && retryCount < maxRetries) {
+        // Meshes not loaded yet, retry
+        setTimeout(() => applyLEDFrontVisibility(retryCount + 1), retryDelay);
+        return;
+      }
+      
+      // Apply visibility using LEDMapping method (handles LED_FRONT_* meshes)
+      if (ledMapping) {
+        ledMapping.setLEDFrontVisible(desiredVisibility);
+        // Update global reference for backwards compatibility
+        const currentLedFrontMesh = ledMapping.getLEDFrontMesh();
         if (currentLedFrontMesh) {
-          currentLedFrontMesh.visible = false;
-          ledFrontMesh = currentLedFrontMesh; // Update global reference
+          ledFrontMesh = currentLedFrontMesh;
         }
-        if (hideLedFrontCheckbox) {
-          hideLedFrontCheckbox.checked = true;
-        }
-      } else if (selectedType === 'frontProjection' || selectedType === 'frontProjectionPerspective') {
-        // Show front screen for Front Projection types
+      } else {
+        // Fallback for backwards compatibility
+        const currentLedFrontMesh = ledFrontMesh;
         if (currentLedFrontMesh) {
-          currentLedFrontMesh.visible = true;
-          ledFrontMesh = currentLedFrontMesh; // Update global reference
-        }
-        if (hideLedFrontCheckbox) {
-          hideLedFrontCheckbox.checked = false;
+          currentLedFrontMesh.visible = desiredVisibility;
         }
       }
       
+      // Also directly traverse ledsGroup to ensure all LED_FRONT_* meshes are handled
+      // This is important for FarCam meshes which might not be in loadedLEDMeshes yet
+      if (ledsGroup) {
+        ledsGroup.traverse((child) => {
+          if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
+            child.visible = desiredVisibility;
+            console.log(`Set LED_FRONT_ mesh visibility: ${child.name} = ${desiredVisibility}`);
+          }
+        });
+      }
+      
       // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material);
-    }, 100);
+      updateLEDShaders(ledsGroup, material, selectedType);
+      
+      // Restore black garages state based on checkbox
+      if (ledMapping) {
+        ledMapping.applyBlackToGarages(shouldTurnGaragesBlack);
+      }
+      
+      if (retryCount > 0) {
+        console.log(`Applied LED front visibility after ${retryCount} retries. Visibility: ${desiredVisibility}, Checkbox checked: ${shouldHideLedFront}`);
+      }
+    };
+    
+    // Start applying visibility after initial delay
+    setTimeout(() => applyLEDFrontVisibility(), 300);
   });
 }
 
@@ -689,7 +751,7 @@ if (useCorrectedMeshCheckbox) {
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material);
+      updateLEDShaders(ledsGroup, material, selectedType);
     }, 200);
   });
   
@@ -714,7 +776,7 @@ if (useCorrectedMeshCheckbox) {
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material);
+      updateLEDShaders(ledsGroup, material, selectedType);
     }, 200);
   }
 }
@@ -723,6 +785,7 @@ if (useCorrectedMeshCheckbox) {
 // Use setTimeout to ensure DOM is ready
 setTimeout(() => {
   if (correctedMeshGroup) {
+    // Hide for FarCam options (A-E) and festival, show only for frontProjection types
     if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
       correctedMeshGroup.style.display = 'block';
     } else {
@@ -747,7 +810,7 @@ if (textureScaleSlider && textureScaleValue) {
     }
     
     // Update texture scale in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -767,7 +830,7 @@ if (textureOffsetUSlider && textureOffsetUValue) {
     }
     
     // Update texture offset U in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -787,7 +850,7 @@ if (textureOffsetVSlider && textureOffsetVValue) {
     }
     
     // Update texture offset V in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -806,7 +869,7 @@ if (textureScaleResetBtn && textureScaleSlider && textureScaleValue) {
     }
     
     // Update texture scale in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -825,7 +888,7 @@ if (textureOffsetUResetBtn && textureOffsetUSlider && textureOffsetUValue) {
     }
     
     // Update texture offset U in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -844,7 +907,7 @@ if (textureOffsetVResetBtn && textureOffsetVSlider && textureOffsetVValue) {
     }
     
     // Update texture offset V in all LED shaders
-    updateLEDShaders(ledsGroup, material);
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -1411,16 +1474,34 @@ const djDeckHeightValue = document.getElementById('djDeckHeightValue');
 
 // Handle hide LED front checkbox
 hideLedFrontCheckbox.addEventListener('change', (e) => {
-  // Get the current LED front mesh from LEDMapping (it manages the mesh)
-  const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
-  if (currentLedFrontMesh) {
-    currentLedFrontMesh.visible = !e.target.checked;
+  const shouldHide = e.target.checked;
+  const shouldShow = !shouldHide;
+  
+  // Use LEDMapping's method to hide/show LED front meshes (including LED_FRONT_* meshes)
+  if (ledMapping) {
+    ledMapping.setLEDFrontVisible(shouldShow);
     // Also update the global reference for backwards compatibility
-    ledFrontMesh = currentLedFrontMesh;
-    console.log('LED front visibility set to:', !e.target.checked);
+    const currentLedFrontMesh = ledMapping.getLEDFrontMesh();
+    if (currentLedFrontMesh) {
+      ledFrontMesh = currentLedFrontMesh;
+    }
   } else {
-    console.warn('LED front mesh not found, checkbox state:', e.target.checked);
+    // Fallback for backwards compatibility
+    const currentLedFrontMesh = ledFrontMesh;
+    if (currentLedFrontMesh) {
+      currentLedFrontMesh.visible = shouldShow;
+      // Also traverse and hide/show LED_FRONT_* meshes
+      if (ledsGroup) {
+        ledsGroup.traverse((child) => {
+          if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
+            child.visible = shouldShow;
+          }
+        });
+      }
+    }
   }
+  
+  console.log('LED front visibility set to:', shouldShow);
 });
 
 // Handle black garages checkbox
@@ -1585,13 +1666,17 @@ function loadNDIStream(streamName) {
 
 // Legacy function wrapper - replaced by MediaManager
 // Default video path
-const DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12_55FP.mp4';
+const DEFAULT_VIDEO_PATH = '/assets/videos/Eva_v12_5to1.mp4';
 
 // Function to load checkerboard texture
-function loadCheckerboardTexture() {
+function loadCheckerboardTexture(checkerboardType = '55to1') {
+  const texturePath = checkerboardType === '5to1' 
+    ? '/assets/textures/UVGrid5to1.png'
+    : '/assets/textures/UVGrid55to1.png';
+  
   const loader = new THREE.TextureLoader();
   loader.load(
-    '/assets/textures/UVGrid55to1.png',
+    texturePath,
     // onLoad callback
     (texture) => {
       // Apply texture to shader material
@@ -1605,11 +1690,23 @@ function loadCheckerboardTexture() {
       material.uniforms.uIsImageTexture.value = 1.0;
       
       // Update LED shaders with the checkerboard texture
-      updateLEDShaders(ledsGroup, material);
+      updateLEDShaders(ledsGroup, material, currentMappingType);
       
-      // Hide overlay
-      if (overlayImage) overlayImage.style.display = 'none';
-      if (overlayVideo) overlayVideo.style.display = 'none';
+      // Setup overlay image for mapping preview
+      if (overlayImage) {
+        overlayImage.src = texturePath;
+        overlayImage.style.display = 'block';
+        overlayImage.onload = () => {
+          if (overlayImage.naturalWidth && overlayImage.naturalHeight) {
+            if (overlayManager) {
+              overlayManager.adjustMappingAspectRatio(overlayImage.naturalWidth, overlayImage.naturalHeight);
+            }
+          }
+        };
+      }
+      if (overlayVideo) {
+        overlayVideo.style.display = 'none';
+      }
       
       // Hide frame info and timeline for checkerboard
       if (frameInfo) frameInfo.classList.remove('active');
@@ -1627,7 +1724,7 @@ function loadCheckerboardTexture() {
       }
       
       if (textureStatus) {
-        textureStatus.textContent = 'Loaded: Checkerboard';
+        textureStatus.textContent = `Loaded: Checkerboard (${checkerboardType === '5to1' ? '5:1' : '5.5:1'})`;
         textureStatus.classList.add('loaded');
       }
     },
@@ -1640,7 +1737,81 @@ function loadCheckerboardTexture() {
         textureStatus.textContent = 'Error loading checkerboard texture';
         textureStatus.classList.remove('loaded');
       }
-      alert('Error loading checkerboard texture. Please ensure UVGrid55to1.png exists in /assets/textures/');
+      alert(`Error loading checkerboard texture. Please ensure ${texturePath.split('/').pop()} exists in /assets/textures/`);
+    }
+  );
+}
+
+// Function to load character texture
+function loadCharacterTexture(characterType = '55to1') {
+  const texturePath = characterType === '5to1' 
+    ? '/assets/textures/Character_5to1.png'
+    : '/assets/textures/Character_55to1.png';
+  
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    texturePath,
+    // onLoad callback
+    (texture) => {
+      // Apply texture to shader material
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      
+      material.uniforms.uTexture.value = texture;
+      material.uniforms.uHasTexture.value = 1.0;
+      material.uniforms.uIsImageTexture.value = 1.0;
+      
+      // Update LED shaders with the character texture
+      updateLEDShaders(ledsGroup, material, currentMappingType);
+      
+      // Setup overlay image for mapping preview
+      if (overlayImage) {
+        overlayImage.src = texturePath;
+        overlayImage.style.display = 'block';
+        overlayImage.onload = () => {
+          if (overlayImage.naturalWidth && overlayImage.naturalHeight) {
+            if (overlayManager) {
+              overlayManager.adjustMappingAspectRatio(overlayImage.naturalWidth, overlayImage.naturalHeight);
+            }
+          }
+        };
+      }
+      if (overlayVideo) {
+        overlayVideo.style.display = 'none';
+      }
+      
+      // Hide frame info and timeline for character texture
+      if (frameInfo) frameInfo.classList.remove('active');
+      if (timelineContainer) timelineContainer.classList.remove('active');
+      if (stillInfo) stillInfo.classList.remove('active');
+      
+      // Hide playback menu for character texture
+      if (playbackControls && playbackControls.playbackMenu) {
+        playbackControls.playbackMenu.style.display = 'none';
+      }
+      
+      // Show mapping overlay if checkbox is checked
+      if (showMappingCheckbox && showMappingCheckbox.checked && mapping) {
+        mapping.classList.add('active');
+      }
+      
+      if (textureStatus) {
+        textureStatus.textContent = `Loaded: Character (${characterType === '5to1' ? '5:1' : '5.5:1'})`;
+        textureStatus.classList.add('loaded');
+      }
+    },
+    // onProgress callback (optional)
+    undefined,
+    // onError callback
+    (error) => {
+      console.error('Error loading character texture:', error);
+      if (textureStatus) {
+        textureStatus.textContent = 'Error loading character texture';
+        textureStatus.classList.remove('loaded');
+      }
+      alert(`Error loading character texture. Please ensure ${texturePath.split('/').pop()} exists in /assets/textures/`);
     }
   );
 }
@@ -1651,9 +1822,30 @@ if (videoAssetSelect) {
     const selectedValue = e.target.value;
     console.log('Video asset selected:', selectedValue);
     if (selectedValue) {
-      if (selectedValue === 'checkerboard') {
-        console.log('Loading checkerboard texture...');
-        loadCheckerboardTexture();
+      if (selectedValue === 'checkerboard5to1') {
+        console.log('Loading checkerboard texture (5:1)...');
+        loadCheckerboardTexture('5to1');
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
+      } else if (selectedValue === 'checkerboard55to1') {
+        console.log('Loading checkerboard texture (5.5:1)...');
+        loadCheckerboardTexture('55to1');
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
+      } else if (selectedValue === 'character5to1') {
+        console.log('Loading character texture (5:1)...');
+        loadCharacterTexture('5to1');
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
+      } else if (selectedValue === 'character55to1') {
+        console.log('Loading character texture (5.5:1)...');
+        loadCharacterTexture('55to1');
         // Reset file input
         if (textureInput) {
           textureInput.value = '';

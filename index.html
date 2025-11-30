@@ -55,11 +55,17 @@
                         <div class="control-group" id="textureInputGroup">
                             <label for="videoAssetSelect" class="label">Sample Assets</label>
                             <select id="videoAssetSelect" class="dropdown">
-                                <option value="checkerboard">Checkerboard</option>
-                                <option value="/assets/videos/ANYMA_DunDun_55FP.mp4">ANYMA_DunDun_55FP.mp4</option>
-                                <option value="/assets/videos/ANYMA_DunDun_55FP_timecode.mp4">ANYMA_DunDun_55FP_timecode.mp4</option>
-                                <option value="/assets/videos/ANYMA_HumanNow_55FP.mp4">ANYMA_HumanNow_55FP.mp4</option>
-                                <option value="/assets/videos/shG010_Eva_v12_55FP.mp4">shG010_Eva_v12_55FP.mp4</option>
+                                <option value="checkerboard5to1">Checkerboard (5:1)</option>
+                                <option value="checkerboard55to1">Checkerboard (5.5:1)</option>
+                                <option value="character5to1">Character (5:1)</option>
+                                <option value="character55to1">Character (5.5:1)</option>
+                                <option value="/assets/videos/DunDun_5to1.mp4">DunDun (5:1)</option>
+                                <option value="/assets/videos/HumanNow_5to1.mp4">HumanNow (5:1)</option>
+                                <option value="/assets/videos/Eva_v12_5to1.mp4" selected>Eva v12 (5:1)</option>
+                                <option value="/assets/videos/DunDun_55to1.mp4">DunDun (5.5:1)</option>
+                                <option value="/assets/videos/DunDun_55to1_tc60fps.mp4">DunDun (5.5:1, TC 60fps)</option>
+                                <option value="/assets/videos/HumanNow_55to1.mp4">HumanNow (5.5:1)</option>
+                                <option value="/assets/videos/Eva_v12_55to1.mp4">Eva v12 (5.5:1)</option>
                             </select>
                         </div>
                         <div class="control-group">
@@ -90,9 +96,14 @@
                         <div class="control-group">
                             <label class="label">Mapping Type</label>
                             <select id="mappingTypeSelect" class="dropdown">
-                                <option value="frontProjectionPerspective" selected>Front Projection Perspective</option>
-                                <option value="frontProjection">Front Projection Orthogonal</option>
-                                <option value="festival">Festival Mapping</option>
+                                <option value="farCamA" selected>A - Far/Flaps/Bow/GarageFix (5:1)</option>
+                                <option value="farCamB">B - Far/Flaps/Bow/Mask (5:1)</option>
+                                <option value="farCamC">C - Far/Flaps/Bow/GarageFix/ShiftY (5:1)</option>
+                                <option value="farCamD">D - Far/Flaps/Bow/ShiftY/Mask (5:1)</option>
+                                <option value="farCamE">E - Flaps/Bow/GarageFix/ShiftY/Scale (5:1)</option>
+                                <option value="frontProjectionPerspective">Front Projection Perspective (5.1:1) (old)</option>
+                                <option value="frontProjection">Front Projection Orthographic (5.1:1) (old)</option>
+                                <option value="festival">Festival Mapping (7.4:1) (old)</option>
                             </select>
                         </div>
                         <div class="control-group" id="correctedMeshGroup" style="display: none;">
@@ -109,8 +120,14 @@
                         </div>
                         <div class="control-group">
                             <div class="checkbox-wrapper">
+                                <input type="checkbox" id="blackGarages" />
+                                <label for="blackGarages" class="label-inline">Turn Garages Black</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
                                 <input type="checkbox" id="showMapping">
-                                <label for="showMapping" class="label-inline">Show Pixelmapping</label>
+                                <label for="showMapping" class="label-inline">Show Source</label>
                             </div>
                         </div>
                         <div class="control-group">
@@ -222,22 +239,16 @@
                                 value="4000"
                             />
                         </div>
-                        <div class="control-group">
-                            <div class="checkbox-wrapper">
-                                <input type="checkbox" id="blackGarages" />
-                                <label for="blackGarages" class="label-inline">Turn Garages Black</label>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Camera Tab Content -->
                     <div class="tab-panel" id="cameraTabPanel">
                         <div class="control-group">
                             <div class="camera-position-buttons">
-                                <button class="camera-position-btn" id="cameraPos1">Position 1</button>
-                                <button class="camera-position-btn" id="cameraPos2">Position 2</button>
-                                <button class="camera-position-btn" id="cameraPos3">Position 3</button>
-                                <button class="camera-position-btn" id="cameraPos4">Position 4</button>
+                                <button class="camera-position-btn" id="cameraPos1">Home</button>
+                                <button class="camera-position-btn" id="cameraPos2">Crowd</button>
+                                <button class="camera-position-btn" id="cameraPos3">Projection close (5.5:1)</button>
+                                <button class="camera-position-btn" id="cameraPos4">Projection far (5:1)</button>
                             </div>
                         </div>
                         <div class="control-group">

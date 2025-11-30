@@ -42,8 +42,9 @@ export class MeshLoader {
    * @param {THREE.Group} targetGroup - Group to add the mesh to
    * @param {boolean} isStage - Whether this is a stage mesh (true) or LED mesh (false)
    * @param {THREE.ShaderMaterial} textureMaterial - Texture material for LED meshes
+   * @param {string} mappingType - Current mapping type (optional, for mask application)
    */
-  loadMesh(path, targetGroup, isStage = false, textureMaterial = null) {
+  loadMesh(path, targetGroup, isStage = false, textureMaterial = null, mappingType = null) {
     this.gltfLoader.load(
       path,
       (gltf) => {
@@ -53,7 +54,7 @@ export class MeshLoader {
         
         if (!isStage && targetGroup.name === 'LEDs') {
           // Handle LED meshes
-          this.handleLEDMesh(model, path, textureMaterial);
+          this.handleLEDMesh(model, path, textureMaterial, mappingType);
         } else if (isStage) {
           // Handle stage meshes
           this.handleStageMesh(model, path);
@@ -79,8 +80,9 @@ export class MeshLoader {
    * @param {THREE.Object3D} model - Loaded model
    * @param {string} path - Mesh path
    * @param {THREE.ShaderMaterial} textureMaterial - Texture material
+   * @param {string} mappingType - Current mapping type (optional, for mask application)
    */
-  handleLEDMesh(model, path, textureMaterial) {
+  handleLEDMesh(model, path, textureMaterial, mappingType = null) {
     // Store reference to LED front mesh
     if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
       if (this.meshCallbacks.onLEDFrontLoaded) {
@@ -113,6 +115,10 @@ export class MeshLoader {
     }
     
     // Apply LED shader to LED meshes
+    // Check if this is a garage mesh (for mask application in mapping types B and D)
+    const isGarageMesh = path.includes('SL_GARAGE') || path.includes('SR_GARAGE') || 
+                         path.includes('SL_Garage') || path.includes('SR_Garage');
+    
     model.traverse((child) => {
       if (child.isMesh) {
         // Store original material if needed
@@ -120,7 +126,7 @@ export class MeshLoader {
           child.userData.originalMaterial = child.material;
         }
         if (textureMaterial && this.createLEDShaderMaterialFn) {
-          child.material = this.createLEDShaderMaterialFn(textureMaterial);
+          child.material = this.createLEDShaderMaterialFn(textureMaterial, mappingType, isGarageMesh);
         }
       }
     });
@@ -227,4 +233,5 @@ export class MeshLoader {
     }
   }
 }
+
 

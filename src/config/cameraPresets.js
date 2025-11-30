@@ -20,9 +20,9 @@ export const cameraPositions = [
     target: { x: 0, y: 7.8638, z: 0 }
   },
   {
-    position: { x: 7.3, y: 38.62, z: 80.96 },
-    rotation: { x: -25.44, y: 2.85, z: 1.35 },
-    target: { x: 3.63, y: 6.96, z: 14.39 }
+    position: { x: 0, y: 7.86, z: 100 },
+    rotation: { x: 0, y: 0, z: 0 },
+    target: { x: 0, y: 7.86, z: 0 }
   }
 ];
 

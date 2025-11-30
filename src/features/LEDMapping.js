@@ -66,23 +66,54 @@ export class LEDMapping {
     // Store LED front visibility state before clearing (to prevent flash)
     this.restoreLedFrontVisible = this.ledFrontMesh ? this.ledFrontMesh.visible : true;
     
-    // Clear existing LED meshes
-    this.loadedLEDMeshes.forEach(mesh => {
-      this.ledsGroup.remove(mesh);
-      // Dispose of geometry and materials
-      mesh.traverse((child) => {
-        if (child.isMesh) {
-          if (child.geometry) child.geometry.dispose();
-          if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => mat.dispose());
-            } else {
-              child.material.dispose();
+    // Clear ALL existing LED meshes from ledsGroup (more thorough cleanup)
+    // Collect all direct children of ledsGroup to avoid issues with modifying array during iteration
+    const childrenToRemove = [...this.ledsGroup.children];
+    
+    // Also collect from loadedLEDMeshes for proper disposal
+    const meshesToDispose = [...this.loadedLEDMeshes];
+    
+    // Remove all direct children from ledsGroup
+    childrenToRemove.forEach(child => {
+      this.ledsGroup.remove(child);
+    });
+    
+    // Dispose of geometry and materials from all meshes
+    const allMeshesToDispose = new Set();
+    
+    // Add tracked meshes
+    meshesToDispose.forEach(mesh => {
+      allMeshesToDispose.add(mesh);
+    });
+    
+    // Add children that weren't tracked
+    childrenToRemove.forEach(child => {
+      allMeshesToDispose.add(child);
+    });
+    
+    // Dispose of all meshes
+    allMeshesToDispose.forEach(mesh => {
+      if (mesh && mesh.traverse) {
+        mesh.traverse((child) => {
+          if (child.isMesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(mat => {
+                  if (mat) mat.dispose();
+                });
+              } else {
+                child.material.dispose();
+              }
             }
           }
-        }
-      });
+        });
+      }
     });
+    
+    // Clear all references
     this.loadedLEDMeshes.length = 0;
     this.ledFrontMesh = null;
     this.slWingMesh = null;
@@ -136,8 +167,20 @@ export class LEDMapping {
     
     // Load new LED meshes
     paths.forEach(path => {
-      this.meshLoader.loadMesh(path, this.ledsGroup, false, this.material);
+      this.meshLoader.loadMesh(path, this.ledsGroup, false, this.material, mappingType);
     });
+    
+    // Track FarCam meshes (and any other meshes that don't match callbacks)
+    // after a delay to ensure they're loaded
+    setTimeout(() => {
+      this.ledsGroup.children.forEach(child => {
+        if (child.userData && child.userData.path && 
+            child.userData.path.includes('FarCam') && 
+            !this.loadedLEDMeshes.includes(child)) {
+          this.loadedLEDMeshes.push(child);
+        }
+      });
+    }, 200);
     
     // Update current mapping type
     this.currentMappingType = mappingType;
@@ -177,6 +220,24 @@ export class LEDMapping {
       this.ledFrontMesh.visible = visible;
       this.restoreLedFrontVisible = visible;
     }
+    
+    // Also hide/show all meshes with names containing "LED_FRONT_" in loaded meshes
+    this.loadedLEDMeshes.forEach(mesh => {
+      mesh.traverse((child) => {
+        if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
+          child.visible = visible;
+        }
+      });
+    });
+    
+    // Also check ledsGroup directly to catch any meshes that might not be in loadedLEDMeshes
+    if (this.ledsGroup) {
+      this.ledsGroup.traverse((child) => {
+        if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
+          child.visible = visible;
+        }
+      });
+    }
   }
   
   /**
@@ -190,6 +251,8 @@ export class LEDMapping {
     console.log('applyBlackToGarages called:', { apply, sl: !!garages.sl, sr: !!garages.sr });
     
     let meshCount = 0;
+    
+    // First, process garage meshes found by callbacks (for old mapping types)
     garageMeshes.forEach((garageMesh, index) => {
       if (!garageMesh) {
         console.warn(`Garage mesh ${index === 0 ? 'SL' : 'SR'} not found`);
@@ -209,16 +272,83 @@ export class LEDMapping {
             console.log(`Applied black material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
           } else {
             // Restore LED shader material (always create fresh to ensure uniforms are current)
-            // Pass the texture material reference to createLEDShaderMaterial
-            child.material = this.createLEDShaderMaterial(this.material);
+            // Pass the texture material reference, mapping type, and garage flag to createLEDShaderMaterial
+            child.material = this.createLEDShaderMaterial(this.material, this.currentMappingType, true);
             // Update shader with current texture
-            this.updateLEDShaders(this.ledsGroup, this.material);
+            this.updateLEDShaders(this.ledsGroup, this.material, this.currentMappingType);
             child.userData.originalMaterial = null;
             console.log(`Restored LED shader material to mesh in ${index === 0 ? 'SL' : 'SR'} garage`);
           }
         }
       });
     });
+    
+    // Use a Set to track processed meshes to avoid duplicates
+    const processedMeshes = new Set();
+    
+    // Also search for garage meshes by name in all loaded meshes (for FarCam and other meshes)
+    // This handles cases where garage meshes are inside a single GLB file
+    this.loadedLEDMeshes.forEach(mesh => {
+      mesh.traverse((child) => {
+        if (child.isMesh && child.name && 
+            (child.name.includes('GARAGE') || child.name.includes('Garage') || child.name.includes('garage'))) {
+          // Skip if we already processed this mesh
+          if (processedMeshes.has(child)) {
+            return;
+          }
+          processedMeshes.add(child);
+          
+          meshCount++;
+          if (apply) {
+            // Store original material if not already stored
+            if (!child.userData.originalMaterial) {
+              child.userData.originalMaterial = child.material;
+            }
+            // Apply black material
+            child.material = this.blackMaterial;
+            console.log(`Applied black material to garage mesh by name: ${child.name}`);
+          } else {
+            // Restore LED shader material (this is a garage mesh)
+            child.material = this.createLEDShaderMaterial(this.material, this.currentMappingType, true);
+            this.updateLEDShaders(this.ledsGroup, this.material, this.currentMappingType);
+            child.userData.originalMaterial = null;
+            console.log(`Restored LED shader material to garage mesh by name: ${child.name}`);
+          }
+        }
+      });
+    });
+    
+    // Also check ledsGroup directly to catch any garage meshes that might not be in loadedLEDMeshes yet
+    
+    if (this.ledsGroup) {
+      this.ledsGroup.traverse((child) => {
+        if (child.isMesh && child.name && 
+            (child.name.includes('GARAGE') || child.name.includes('Garage') || child.name.includes('garage'))) {
+          // Skip if we already processed this mesh
+          if (processedMeshes.has(child)) {
+            return;
+          }
+          processedMeshes.add(child);
+          
+          meshCount++;
+          if (apply) {
+            // Store original material if not already stored
+            if (!child.userData.originalMaterial) {
+              child.userData.originalMaterial = child.material;
+            }
+            // Apply black material
+            child.material = this.blackMaterial;
+            console.log(`Applied black material to garage mesh in ledsGroup: ${child.name}`);
+          } else {
+            // Restore LED shader material (this is a garage mesh)
+            child.material = this.createLEDShaderMaterial(this.material, this.currentMappingType, true);
+            this.updateLEDShaders(this.ledsGroup, this.material, this.currentMappingType);
+            child.userData.originalMaterial = null;
+            console.log(`Restored LED shader material to garage mesh in ledsGroup: ${child.name}`);
+          }
+        }
+      });
+    }
     
     if (meshCount === 0) {
       console.warn('No meshes found in garage meshes. They may not be loaded yet.');

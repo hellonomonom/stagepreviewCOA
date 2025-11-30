@@ -27,6 +27,21 @@ export const ledMeshFiles = {
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_GARAGE.glb',
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_SR_WING.glb',
     '/assets/meshes/FrontProjection_perspective/ANYMA_Coachella_Stage_v017_LED_US_WALL.glb'
+  ],
+  farCamA: [
+    '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_A.glb'
+  ],
+  farCamB: [
+    '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_B.glb'
+  ],
+  farCamC: [
+    '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_C.glb'
+  ],
+  farCamD: [
+    '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_D.glb'
+  ],
+  farCamE: [
+    '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_E.glb'
   ]
 };
 
@@ -49,7 +64,7 @@ export const crowdMeshPaths = [
 ];
 
 // Default mapping type
-export const DEFAULT_MAPPING_TYPE = 'frontProjectionPerspective';
+export const DEFAULT_MAPPING_TYPE = 'farCamA';
 
 // Corrected wing mesh paths for front projection types
 export const correctedWingMeshes = {
@@ -62,4 +77,5 @@ export const correctedWingMeshes = {
     sr: '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb'
   }
 };
+
 

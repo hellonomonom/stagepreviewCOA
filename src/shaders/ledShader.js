@@ -18,11 +18,13 @@ export const ledVertexShader = `
 
 export const ledFragmentShader = `
   uniform sampler2D uTexture;
+  uniform sampler2D uMaskTexture;
   uniform float uHasTexture;
   uniform float uIsImageTexture;
   uniform float uTextureScale;
   uniform float uTextureOffsetU;
   uniform float uTextureOffsetV;
+  uniform float uUseMask;
   varying vec2 vUv;
   varying vec3 vNormal;
   
@@ -45,6 +47,17 @@ export const ledFragmentShader = `
           // Then invert V coordinate
           vec2 invertedUv = vec2(offsetUv.x, 1.0 - offsetUv.y);
           vec4 texColor = texture2D(uTexture, invertedUv);
+          
+          // Apply mask if enabled (for mapping types B and D)
+          // Mask uses unscaled UV coordinates (only V is inverted)
+          if (uUseMask > 0.5) {
+            vec2 maskUv = vec2(vUv.x, 1.0 - vUv.y);
+            vec4 maskColor = texture2D(uMaskTexture, maskUv);
+            // Multiply texture with mask (using mask RGB and alpha)
+            texColor.rgb *= maskColor.rgb;
+            texColor.a *= maskColor.a;
+          }
+          
           // Use texture directly for both images and videos
           gl_FragColor = vec4(texColor.rgb, texColor.a);
         }

@@ -45,9 +45,12 @@ export class OverlayManager {
     if (this.showMappingCheckbox) {
       this.showMappingCheckbox.addEventListener('change', (e) => {
         if (e.target.checked) {
-          // Show if there's a video or texture loaded
+          // Show if there's a video or texture loaded (including images)
           const videoElement = this.mediaManager ? this.mediaManager.getCurrentVideoElement() : null;
-          if (videoElement || (this.material && this.material.uniforms && this.material.uniforms.uHasTexture.value === 1.0)) {
+          const hasTexture = this.material && this.material.uniforms && this.material.uniforms.uHasTexture.value === 1.0;
+          const hasImage = this.overlayImage && this.overlayImage.src && this.overlayImage.src !== '';
+          
+          if (videoElement || hasTexture || hasImage) {
             if (this.mapping) {
               this.mapping.classList.add('active');
             }
@@ -139,4 +142,5 @@ export class OverlayManager {
     return this.overlayImage;
   }
 }
+
 
