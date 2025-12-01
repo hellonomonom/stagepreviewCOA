@@ -87,5 +87,7 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(buildTimestamp),
     __GIT_COMMIT__: JSON.stringify(getGitCommitHash()),
   },
+  // Expose environment variables to the client
+  envPrefix: 'VITE_',
 });
 
