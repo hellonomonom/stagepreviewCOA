@@ -13,11 +13,18 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Set FFmpeg path if available
+// Set FFmpeg path if available and derive binary path for spawn/exec
+let ffmpegBinary = 'ffmpeg';
 try {
-  ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+  if (ffmpegInstaller && ffmpegInstaller.path) {
+    ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+    ffmpegBinary = ffmpegInstaller.path;
+    console.log(`Using bundled FFmpeg: ${ffmpegBinary}`);
+  } else {
+    console.log('FFmpeg installer path not found, will try system FFmpeg');
+  }
 } catch (error) {
-  console.log('FFmpeg installer not available, will try system FFmpeg');
+  console.log('FFmpeg installer not available, will try system FFmpeg:', error.message);
 }
 
 const execAsync = promisify(exec);
@@ -161,9 +168,15 @@ app.get('/ndi/stream/:streamName', async (req, res) => {
     
     // Check if OBS Virtual Camera is available
     try {
-      const { stdout } = await execAsync('ffmpeg -list_devices true -f dshow -i dummy 2>&1', { timeout: 3000 });
+      let ffmpegOutput = '';
+      try {
+        const result = await execAsync(`"${ffmpegBinary}" -list_devices true -f dshow -i dummy`, { timeout: 3000 });
+        ffmpegOutput = (result.stdout || '') + (result.stderr || '');
+      } catch (error) {
+        ffmpegOutput = (error.stdout || '') + (error.stderr || '');
+      }
       for (const deviceName of obsVirtualCameraDevices) {
-        if (stdout.includes(deviceName)) {
+        if (ffmpegOutput.includes(deviceName)) {
           virtualCameraName = deviceName;
           useOBSVirtualCamera = true;
           console.log(`Found OBS Virtual Camera: ${deviceName}`);
@@ -171,7 +184,7 @@ app.get('/ndi/stream/:streamName', async (req, res) => {
         }
       }
     } catch (error) {
-      console.log('Could not check for OBS Virtual Camera, trying direct NDI...');
+      console.log('Could not check for OBS Virtual Camera, trying direct NDI...', error.message);
     }
     
     // If OBS Virtual Camera is available, use it
@@ -344,10 +357,16 @@ wss.on('connection', (ws, req) => {
         let virtualCameraName = null;
         
         try {
-          const { stdout } = await execAsync('ffmpeg -list_devices true -f dshow -i dummy 2>&1', { timeout: 3000 });
+          let ffmpegOutput = '';
+          try {
+            const result = await execAsync(`"${ffmpegBinary}" -list_devices true -f dshow -i dummy`, { timeout: 3000 });
+            ffmpegOutput = (result.stdout || '') + (result.stderr || '');
+          } catch (error) {
+            ffmpegOutput = (error.stdout || '') + (error.stderr || '');
+          }
           const obsVirtualCameraDevices = ['OBS Virtual Camera', 'OBS-Camera', 'obs-virtual-camera'];
           for (const deviceName of obsVirtualCameraDevices) {
-            if (stdout.includes(deviceName)) {
+            if (ffmpegOutput.includes(deviceName)) {
               virtualCameraName = deviceName;
               useOBSVirtualCamera = true;
               console.log(`WebSocket: Found OBS Virtual Camera: ${deviceName}`);
@@ -355,7 +374,7 @@ wss.on('connection', (ws, req) => {
             }
           }
         } catch (error) {
-          console.log('WebSocket: Could not check for OBS Virtual Camera');
+          console.log('WebSocket: Could not check for OBS Virtual Camera', error.message);
         }
         
         // Start FFmpeg to capture frames and convert to JPEG sequence
@@ -386,7 +405,7 @@ wss.on('connection', (ws, req) => {
         );
         
         // Spawn FFmpeg process
-        ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
+        ffmpegProcess = spawn(ffmpegBinary, ffmpegArgs);
         
         let frameBuffer = Buffer.alloc(0);
         

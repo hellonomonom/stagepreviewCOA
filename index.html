@@ -46,7 +46,7 @@
                             <div style="display: flex; gap: var(--space-sm); align-items: center;">
                                 <select id="sourceTypeSelect" class="dropdown" style="flex: 1; min-width: 180px;">
                                     <option value="texture" selected>Image/Video</option>
-                                    <option value="ndi">NDI STREAM (WIP)</option>
+                                    <option value="ndi">NDI STREAM</option>
                                 </select>
                                 <div class="file-input-wrapper" style="flex-shrink: 0;">
                                     <input 
@@ -81,7 +81,7 @@
                             <div class="checkbox-wrapper" style="display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;">
                                 <div style="display: flex; align-items: center; gap: var(--space-sm);">
                                     <input type="checkbox" id="showFileInfo" checked>
-                                    <label for="showFileInfo" class="label-inline">Show file info</label>
+                                    <label for="showFileInfo" class="label-inline">Show source info</label>
                                 </div>
                                 <div id="fileInfoSizeWrapper" style="display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 200px;">
                                     <input type="range" id="fileInfoSize" class="slider" min="50" max="200" step="5" value="100" style="flex: 1;">
@@ -89,15 +89,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="control-group hidden" id="ndiStreamGroup">
-                            <label class="label">Available NDI Streams</label>
-                            <button class="btn mb-md" id="refreshNdiBtn">
-                                Refresh NDI Streams
-                            </button>
-                            <select id="ndiStreamSelect" class="dropdown">
-                                <option value="">No streams discovered yet. Click "Refresh NDI Streams" to discover.</option>
-                            </select>
-                        </div>
+                        <div class="control-group hidden" id="ndiStreamGroup"></div>
                     </div>
 
                     <!-- Mapping Tab Content -->
@@ -648,7 +640,7 @@
         <div class="frame-info" id="frameInfo">
             <span id="fileNameDisplay"></span>
             <span class="frame-info-separator">|</span>
-            <span>Frame: 0 / 0</span>
+            <span id="frameCountDisplay">Frame: 0 / 0</span>
         </div>
         <!-- Still Info for Images -->
         <div class="still-info" id="stillInfo">

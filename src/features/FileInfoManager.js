@@ -9,9 +9,11 @@ export class FileInfoManager {
     
     // DOM Elements
     this.fileNameDisplay = document.getElementById('fileNameDisplay');
+    this.frameCountDisplay = document.getElementById('frameCountDisplay');
     this.timeDisplay = document.getElementById('timeDisplay');
     this.totalTimeDisplay = document.getElementById('totalTimeDisplay');
     this.frameInfo = document.getElementById('frameInfo');
+    this.frameInfoSeparator = document.querySelector('.frame-info-separator');
     this.stillInfo = document.getElementById('stillInfo');
     this.stillFileNameDisplay = document.getElementById('stillFileNameDisplay');
     this.showFileInfoCheckbox = document.getElementById('showFileInfo');
@@ -25,6 +27,9 @@ export class FileInfoManager {
    */
   getFileName(path) {
     if (!path) return '';
+    if (path.startsWith('NDI:')) {
+      return path.substring(4);
+    }
     // Handle both forward and backslashes
     const parts = path.split(/[/\\]/);
     return parts[parts.length - 1] || path;
@@ -111,19 +116,38 @@ export class FileInfoManager {
    * @param {File} file - Image file
    */
   updateStillInfo(file) {
-    if (!this.stillInfo || !this.stillFileNameDisplay) return;
-    
     const imagePath = this.mediaManager ? this.mediaManager.getCurrentImagePath() : null;
     const fileName = this.getFileName(file ? file.name : (imagePath || ''));
     const metadata = this.getImageMetadata(file, this.overlayImage);
     
-    this.stillFileNameDisplay.textContent = `${fileName} (${metadata.bitDepth}, ${metadata.colorspace})`;
+    // Update the main fileNameDisplay with just the filename (no metadata)
+    if (this.fileNameDisplay) {
+      this.fileNameDisplay.textContent = fileName;
+    }
     
-    // Show stillInfo at top if checkbox is checked
-    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
-      this.stillInfo.classList.add('active');
-    } else {
+    // Hide frame count and separator for still images
+    if (this.frameCountDisplay) {
+      this.frameCountDisplay.style.display = 'none';
+    }
+    if (this.frameInfoSeparator) {
+      this.frameInfoSeparator.style.display = 'none';
+    }
+    
+    // Keep stillInfo for backwards compatibility but hide it
+    if (this.stillFileNameDisplay) {
+      this.stillFileNameDisplay.textContent = `${fileName} (${metadata.bitDepth}, ${metadata.colorspace})`;
+    }
+    if (this.stillInfo) {
       this.stillInfo.classList.remove('active');
+    }
+    
+    // Show frameInfo (which now contains just the filename) if checkbox is checked
+    if (this.frameInfo) {
+      if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
+        this.frameInfo.classList.add('active');
+      } else {
+        this.frameInfo.classList.remove('active');
+      }
     }
   }
 
@@ -136,19 +160,56 @@ export class FileInfoManager {
   updateFrameInfo(video, timelineSlider, isSeeking) {
     // Extract filename and codec
     const videoPath = this.mediaManager ? this.mediaManager.getCurrentVideoPath() : null;
+    const isNDI = videoPath && videoPath.startsWith('NDI:');
     const fileName = this.getFileName(videoPath);
-    const codec = this.getVideoCodec(video, videoPath);
+    const codec = isNDI ? '' : this.getVideoCodec(video, videoPath);
     
     if (!video || !isFinite(video.duration) || video.duration === 0) {
+      if (this.frameCountDisplay) {
+        if (isNDI) {
+          // Hide frame count for NDI streams
+          this.frameCountDisplay.style.display = 'none';
+        } else {
+          // Show frame count for regular videos/images
+          this.frameCountDisplay.style.display = '';
+          this.frameCountDisplay.textContent = 'Frame: 0 / 0';
+        }
+      }
+      // Hide/show separator based on NDI
+      if (this.frameInfoSeparator) {
+        this.frameInfoSeparator.style.display = isNDI ? 'none' : '';
+      }
       if (this.frameInfo) {
-        const frameText = this.frameInfo.querySelector('span:nth-child(3)');
-        if (frameText) frameText.textContent = 'Frame: 0 / 0';
+        if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
+          this.frameInfo.classList.add('active');
+        } else {
+          this.frameInfo.classList.remove('active');
+        }
       }
       if (this.fileNameDisplay) {
-        this.fileNameDisplay.textContent = fileName ? `${fileName} (${codec})` : '';
+        if (isNDI) {
+          this.fileNameDisplay.textContent = 'NDI STREAM';
+        } else {
+          const suffix = codec ? ` (${codec})` : '';
+          this.fileNameDisplay.textContent = fileName ? `${fileName}${suffix}` : '';
+        }
       }
-      if (this.timeDisplay) this.timeDisplay.textContent = '00:00';
-      if (this.totalTimeDisplay) this.totalTimeDisplay.textContent = '00:00';
+      if (this.timeDisplay) {
+        if (isNDI) {
+          this.timeDisplay.style.display = 'none';
+        } else {
+          this.timeDisplay.style.display = '';
+          this.timeDisplay.textContent = '00:00';
+        }
+      }
+      if (this.totalTimeDisplay) {
+        if (isNDI) {
+          this.totalTimeDisplay.style.display = 'none';
+        } else {
+          this.totalTimeDisplay.style.display = '';
+          this.totalTimeDisplay.textContent = '00:00';
+        }
+      }
       return;
     }
     
@@ -160,15 +221,29 @@ export class FileInfoManager {
     
     // Update filename display with codec info
     if (this.fileNameDisplay) {
-      this.fileNameDisplay.textContent = `${fileName} (${codec})`;
+      if (isNDI) {
+        this.fileNameDisplay.textContent = 'NDI STREAM';
+      } else {
+        const suffix = codec ? ` (${codec})` : '';
+        this.fileNameDisplay.textContent = `${fileName}${suffix}`;
+      }
     }
     
-    // Update frame counter
     if (this.frameInfo) {
-      // Find the span that contains "Frame:" (third span, after fileNameDisplay and separator)
-      const frameText = this.frameInfo.querySelector('span:nth-child(3)');
-      if (frameText) frameText.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
-      // Show frameInfo at top if checkbox is checked
+      if (this.frameCountDisplay) {
+        if (isNDI) {
+          // Hide frame count for NDI streams
+          this.frameCountDisplay.style.display = 'none';
+        } else {
+          // Show frame count for regular videos
+          this.frameCountDisplay.style.display = '';
+          this.frameCountDisplay.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
+        }
+      }
+      // Hide/show separator based on NDI
+      if (this.frameInfoSeparator) {
+        this.frameInfoSeparator.style.display = isNDI ? 'none' : '';
+      }
       if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
         this.frameInfo.classList.add('active');
       } else {
@@ -178,12 +253,26 @@ export class FileInfoManager {
     
     // Update current time display (format as mm:ss)
     if (this.timeDisplay) {
-      this.timeDisplay.textContent = this.formatTime(currentTime);
+      if (isNDI) {
+        // Hide time display for NDI streams
+        this.timeDisplay.style.display = 'none';
+      } else {
+        // Show time display for regular videos
+        this.timeDisplay.style.display = '';
+        this.timeDisplay.textContent = this.formatTime(currentTime);
+      }
     }
     
     // Update total time display (format as mm:ss)
     if (this.totalTimeDisplay) {
-      this.totalTimeDisplay.textContent = this.formatTime(duration);
+      if (isNDI) {
+        // Hide total time display for NDI streams
+        this.totalTimeDisplay.style.display = 'none';
+      } else {
+        // Show total time display for regular videos
+        this.totalTimeDisplay.style.display = '';
+        this.totalTimeDisplay.textContent = this.formatTime(duration);
+      }
     }
     
     // Update timeline slider (only if not currently seeking)
@@ -192,5 +281,62 @@ export class FileInfoManager {
       timelineSlider.value = percentage;
     }
   }
+
+  /**
+   * Update filename display for NDI streams or other manual cases
+   * @param {string|null} streamName
+   */
+  setNDIStreamName(streamName) {
+    if (this.fileNameDisplay) {
+      this.fileNameDisplay.textContent = streamName ? 'NDI STREAM' : '';
+    }
+    if (this.frameCountDisplay) {
+      this.frameCountDisplay.textContent = streamName ? 'Frame: --' : 'Frame: 0 / 0';
+    }
+    // Hide separator for NDI
+    if (this.frameInfoSeparator) {
+      this.frameInfoSeparator.style.display = streamName ? 'none' : '';
+    }
+    if (this.frameInfo) {
+      if (streamName && this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
+        this.frameInfo.classList.add('active');
+      } else {
+        this.frameInfo.classList.remove('active');
+      }
+    }
+  }
+
+  /**
+   * Update filename display with NDI camera device name
+   * @param {string|null} cameraName
+   */
+  setNDICameraName(cameraName) {
+    if (this.fileNameDisplay) {
+      this.fileNameDisplay.textContent = cameraName ? 'NDI STREAM' : '';
+    }
+    // Hide frame count for NDI
+    if (this.frameCountDisplay) {
+      this.frameCountDisplay.style.display = 'none';
+    }
+    // Hide separator for NDI
+    if (this.frameInfoSeparator) {
+      this.frameInfoSeparator.style.display = 'none';
+    }
+    // Hide time displays for NDI (live stream, no duration)
+    if (this.timeDisplay) {
+      this.timeDisplay.style.display = 'none';
+    }
+    if (this.totalTimeDisplay) {
+      this.totalTimeDisplay.style.display = 'none';
+    }
+    if (this.frameInfo && this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
+      if (cameraName) {
+        this.frameInfo.classList.add('active');
+      } else {
+        this.frameInfo.classList.remove('active');
+      }
+    }
+  }
 }
+
 

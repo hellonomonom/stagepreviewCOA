@@ -587,9 +587,10 @@ setTimeout(() => {
   shaderControls.init();
 }, 2000);
 
-// NDI streams list
-const refreshNdiBtn = document.getElementById('refreshNdiBtn');
-const ndiStreamSelect = document.getElementById('ndiStreamSelect');
+// NDI stream status
+const ndiStreamStatus = document.getElementById('ndiStreamStatus');
+let currentNdiStreamName = null;
+let pendingNdiFileInfo = null;
 
 // Source type dropdown
 const sourceTypeSelect = document.getElementById('sourceTypeSelect');
@@ -603,15 +604,50 @@ sourceTypeSelect.addEventListener('change', (e) => {
   if (selectedType === 'texture') {
     // Show texture input, hide NDI controls
     textureInputGroup.style.display = 'block';
+    textureInputGroup.classList.remove('hidden');
     ndiStreamGroup.style.display = 'none';
+    ndiStreamGroup.classList.add('hidden');
+    
+    // Restore last selected video asset or load default
+    if (videoAssetSelect && lastSelectedVideoAsset) {
+      videoAssetSelect.value = lastSelectedVideoAsset;
+      // Trigger the change event to load the video
+      const event = new Event('change', { bubbles: true });
+      videoAssetSelect.dispatchEvent(event);
+    } else if (videoAssetSelect && !lastSelectedVideoAsset) {
+      // Load default video if no previous selection
+      const defaultPath = DEFAULT_VIDEO_PATH;
+      videoAssetSelect.value = defaultPath;
+      loadVideoFromPath(defaultPath);
+    }
   } else if (selectedType === 'ndi') {
     // Show NDI controls, hide texture input
     textureInputGroup.style.display = 'none';
+    textureInputGroup.classList.add('hidden');
     ndiStreamGroup.style.display = 'block';
+    ndiStreamGroup.classList.remove('hidden');
     // Auto-discover NDI streams when switching to NDI mode
     discoverNDIStreams();
   }
 });
+
+// Initialize UI state based on default selection
+const initialSourceType = sourceTypeSelect.value;
+if (initialSourceType === 'ndi') {
+  // Show NDI controls, hide texture input
+  textureInputGroup.style.display = 'none';
+  textureInputGroup.classList.add('hidden');
+  ndiStreamGroup.style.display = 'block';
+  ndiStreamGroup.classList.remove('hidden');
+  // Auto-discover NDI streams on page load
+  discoverNDIStreams();
+} else {
+  // Show texture input, hide NDI controls
+  textureInputGroup.style.display = 'block';
+  textureInputGroup.classList.remove('hidden');
+  ndiStreamGroup.style.display = 'none';
+  ndiStreamGroup.classList.add('hidden');
+}
 
 // Mapping type dropdown change handler
 const mappingTypeSelect = document.getElementById('mappingTypeSelect');
@@ -911,23 +947,31 @@ if (textureOffsetVResetBtn && textureOffsetVSlider && textureOffsetVValue) {
   });
 }
 
+function setNdiStatus(message, type = 'info') {
+  if (!ndiStreamStatus) return;
+  ndiStreamStatus.textContent = message;
+  ndiStreamStatus.dataset.state = type;
+}
+
+function updateNdiFileInfo(streamName) {
+  pendingNdiFileInfo = streamName;
+  if (fileInfoManager && typeof fileInfoManager.setNDIStreamName === 'function') {
+    fileInfoManager.setNDIStreamName(streamName);
+  }
+}
+
 // Function to fetch and display available NDI streams
 async function discoverNDIStreams() {
-  // Add cache-busting parameter to ensure fresh data
   const discoveryUrl = `http://localhost:8080/ndi/discover?t=${Date.now()}`;
-  
-  // Clear and show loading state
-  ndiStreamSelect.innerHTML = '<option value="">Discovering NDI streams...</option>';
-  ndiStreamSelect.disabled = true;
+  setNdiStatus('Discovering NDI streams...');
+  currentNdiStreamName = null;
   
   try {
     console.log('Attempting to discover NDI streams from:', discoveryUrl);
     const response = await fetch(discoveryUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-      cache: 'no-cache', // Prevent browser caching
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-cache'
     });
     
     if (!response.ok) {
@@ -939,245 +983,24 @@ async function discoverNDIStreams() {
     const streams = await response.json();
     console.log('Received streams data:', streams);
     
-    // Clear and populate the dropdown
-    ndiStreamSelect.innerHTML = '';
-    
     if (Array.isArray(streams) && streams.length > 0) {
-      // Add default option
-      const defaultOption = document.createElement('option');
-      defaultOption.value = '';
-      defaultOption.textContent = 'Select an NDI stream...';
-      ndiStreamSelect.appendChild(defaultOption);
-      
-      // Add stream options
-      streams.forEach((stream) => {
-        const streamName = typeof stream === 'string' ? stream : (stream.name || stream.sourceName || stream.ndi_name || 'Unknown');
-        const option = document.createElement('option');
-        option.value = streamName;
-        option.textContent = streamName;
-        ndiStreamSelect.appendChild(option);
-      });
-      
-      ndiStreamSelect.disabled = false;
-      
-      // Auto-show first stream in separate window
       const firstStream = streams[0];
-      const firstStreamName = typeof firstStream === 'string' ? firstStream : (firstStream.name || firstStream.sourceName || firstStream.ndi_name || 'Unknown');
-      showNDIStreamInWindow(firstStreamName);
+      const firstStreamName = typeof firstStream === 'string'
+        ? firstStream
+        : (firstStream.name || firstStream.sourceName || firstStream.ndi_name || 'Unknown');
+      currentNdiStreamName = firstStreamName;
+      setNdiStatus(`NDI Stream: ${firstStreamName}`);
+      updateNdiFileInfo(firstStreamName);
+      loadNDIStream(firstStreamName);
     } else {
-      const noStreamsOption = document.createElement('option');
-      noStreamsOption.value = '';
-      noStreamsOption.textContent = 'No NDI streams found';
-      ndiStreamSelect.appendChild(noStreamsOption);
-      ndiStreamSelect.disabled = true;
+      setNdiStatus('No NDI streams found');
+      updateNdiFileInfo(null);
     }
   } catch (error) {
     console.error('Error discovering NDI streams:', error);
-    ndiStreamSelect.innerHTML = '<option value="">Error: Could not discover NDI streams. Check backend service.</option>';
-    ndiStreamSelect.disabled = true;
+    setNdiStatus('Error discovering NDI streams');
+    updateNdiFileInfo(null);
     console.log('Note: NDI discovery requires a backend service at:', discoveryUrl);
-  }
-}
-
-// Refresh NDI streams button
-refreshNdiBtn.addEventListener('click', () => {
-  discoverNDIStreams();
-});
-
-// Handle NDI stream selection change
-ndiStreamSelect.addEventListener('change', (e) => {
-  const selectedStream = e.target.value;
-  if (selectedStream && selectedStream !== '') {
-    loadNDIStream(selectedStream);
-  }
-});
-
-// Don't auto-discover on page load - only when switching to NDI mode
-
-// Store reference to NDI stream windows
-const ndiStreamWindows = new Map();
-
-// Function to show NDI stream in a separate window
-function showNDIStreamInWindow(streamName) {
-  console.log('Opening NDI stream in separate window:', streamName);
-  
-  // Check if window already exists for this stream
-  if (ndiStreamWindows.has(streamName)) {
-    const existingWindow = ndiStreamWindows.get(streamName);
-    if (!existingWindow.closed) {
-      existingWindow.focus();
-      return;
-    } else {
-      ndiStreamWindows.delete(streamName);
-    }
-  }
-  
-  // Encode stream name for URL
-  const encodedStreamName = encodeURIComponent(streamName);
-  const ndiStreamUrl = `http://localhost:8080/ndi/stream/${encodedStreamName}`;
-  
-  // Create HTML content for the popup window
-  const popupHTML = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>NDI Stream: ${streamName}</title>
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            body {
-                background: #000;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                overflow: hidden;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            }
-            .stream-container {
-                position: relative;
-                width: 100%;
-                height: 100%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
-            video {
-                max-width: 100%;
-                max-height: 100%;
-                width: auto;
-                height: auto;
-                object-fit: contain;
-            }
-            .stream-info {
-                position: absolute;
-                top: 10px;
-                left: 10px;
-                background: rgba(0, 255, 136, 0.9);
-                color: #000;
-                padding: 8px 12px;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 500;
-                z-index: 100;
-            }
-            .error-message {
-                color: #ff6b6b;
-                text-align: center;
-                padding: 20px;
-                font-size: 14px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="stream-container">
-            <div class="stream-info">NDI: ${streamName}</div>
-            <video id="streamVideo" muted playsinline autoplay></video>
-            <div id="errorMessage" class="error-message" style="display: none;"></div>
-        </div>
-        <script>
-            const video = document.getElementById('streamVideo');
-            const errorMessage = document.getElementById('errorMessage');
-            const streamUrl = '${ndiStreamUrl}';
-            
-            // First, check if the endpoint returns an error
-            fetch(streamUrl, { method: 'HEAD' })
-              .then(response => {
-                if (!response.ok) {
-                  // If it's an error response, try to get the error details
-                  return fetch(streamUrl)
-                    .then(res => res.json())
-                    .then(errorData => {
-                      let errorText = 'Error loading NDI stream.\\n\\n';
-                      if (errorData.message) {
-                        errorText += errorData.message + '\\n\\n';
-                      }
-                      if (errorData.solution) {
-                        errorText += 'Solution: ' + errorData.solution + '\\n\\n';
-                      }
-                      if (errorData.instructions && Array.isArray(errorData.instructions)) {
-                        errorText += 'Instructions:\\n' + errorData.instructions.join('\\n');
-                      } else if (errorData.troubleshooting && Array.isArray(errorData.troubleshooting)) {
-                        errorText += 'Troubleshooting:\\n' + errorData.troubleshooting.join('\\n');
-                      }
-                      errorMessage.textContent = errorText.replace(/\\\\n/g, '\\n');
-                      errorMessage.style.display = 'block';
-                      errorMessage.style.whiteSpace = 'pre-line';
-                    })
-                    .catch(() => {
-                      errorMessage.textContent = 'Error: Backend returned status ' + response.status;
-                      errorMessage.style.display = 'block';
-                    });
-                } else {
-                  // Response is OK, try to load as video
-                  video.src = streamUrl;
-                  video.crossOrigin = 'anonymous';
-                  
-                  video.addEventListener('loadeddata', () => {
-                    console.log('NDI stream loaded in popup');
-                    video.play().catch(err => {
-                      console.error('Error playing video:', err);
-                      errorMessage.textContent = 'Error: Could not play stream. ' + err.message;
-                      errorMessage.style.display = 'block';
-                    });
-                  });
-                  
-                  video.addEventListener('error', (error) => {
-                    console.error('Error loading NDI stream:', error);
-                    errorMessage.textContent = 'Error loading NDI stream. The stream may not be available or FFmpeg does not have NDI support.';
-                    errorMessage.style.display = 'block';
-                  });
-                  
-                  video.load();
-                }
-              })
-              .catch(err => {
-                console.error('Error checking stream:', err);
-                errorMessage.textContent = 'Error: Could not connect to backend service.';
-                errorMessage.style.display = 'block';
-              });
-            
-            // Handle window close
-            window.addEventListener('beforeunload', () => {
-                if (window.opener) {
-                    window.opener.postMessage({ type: 'ndiWindowClosed', streamName: '${streamName}' }, '*');
-                }
-            });
-        </script>
-    </body>
-    </html>
-  `;
-  
-  // Open new window
-  const popupWindow = window.open('', `ndi-${streamName}`, 'width=640,height=360,resizable=yes,scrollbars=no');
-  
-  if (popupWindow) {
-    popupWindow.document.write(popupHTML);
-    popupWindow.document.close();
-    ndiStreamWindows.set(streamName, popupWindow);
-    
-    // Listen for window close message
-    window.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'ndiWindowClosed' && event.data.streamName === streamName) {
-        ndiStreamWindows.delete(streamName);
-      }
-    });
-    
-    // Also check if window was closed manually
-    const checkClosed = setInterval(() => {
-      if (popupWindow.closed) {
-        ndiStreamWindows.delete(streamName);
-        clearInterval(checkClosed);
-      }
-    }, 1000);
-  } else {
-    console.error('Failed to open popup window. Popup blocker may be active.');
-    alert('Failed to open popup window. Please allow popups for this site.');
   }
 }
 
@@ -1424,6 +1247,9 @@ let overlayManager = null;
 // FileInfoManager will be initialized after mediaManager
 let fileInfoManager = null;
 
+// Track last selected video asset for restoration when switching back to texture mode
+let lastSelectedVideoAsset = null;
+
 // Wrapper functions for backwards compatibility
 function updateFrameInfo(video) {
   if (fileInfoManager) {
@@ -1586,6 +1412,15 @@ function initializeMediaManager() {
   // Initialize FileInfoManager after MediaManager
   fileInfoManager = new FileInfoManager(mediaManager);
   
+  // Set FileInfoManager reference in MediaManager
+  if (mediaManager) {
+    mediaManager.fileInfoManager = fileInfoManager;
+  }
+  
+  if (pendingNdiFileInfo) {
+    fileInfoManager.setNDIStreamName(pendingNdiFileInfo);
+  }
+  
   // Initialize OverlayManager after MediaManager
   overlayManager = new OverlayManager(mediaManager, material);
   
@@ -1708,8 +1543,26 @@ function loadCheckerboardTexture(checkerboardType = '55to1') {
         overlayVideo.style.display = 'none';
       }
       
-      // Hide frame info and timeline for checkerboard
-      if (frameInfo) frameInfo.classList.remove('active');
+      // Pause any currently playing video
+      if (mediaManager) {
+        const currentVideo = mediaManager.getCurrentVideoElement();
+        if (currentVideo && !currentVideo.paused) {
+          currentVideo.pause();
+        }
+        // Also cleanup video state
+        mediaManager.cleanupPreviousVideo();
+      }
+      
+      // Update file info display for checkerboard texture
+      if (fileInfoManager) {
+        // Create a mock file object for updateStillInfo
+        const mockFile = {
+          name: texturePath.split('/').pop() // Get filename from path
+        };
+        fileInfoManager.updateStillInfo(mockFile);
+      }
+      
+      // Hide timeline for checkerboard (frameInfo visibility is handled by updateStillInfo)
       if (timelineContainer) timelineContainer.classList.remove('active');
       if (stillInfo) stillInfo.classList.remove('active');
       
@@ -1726,6 +1579,11 @@ function loadCheckerboardTexture(checkerboardType = '55to1') {
       if (textureStatus) {
         textureStatus.textContent = `Loaded: Checkerboard (${checkerboardType === '5to1' ? '5:1' : '5.5:1'})`;
         textureStatus.classList.add('loaded');
+      }
+      
+      // Also update MediaManager's current image path so it's tracked
+      if (mediaManager) {
+        mediaManager.currentImagePath = texturePath;
       }
     },
     // onProgress callback (optional)
@@ -1782,8 +1640,26 @@ function loadCharacterTexture(characterType = '55to1') {
         overlayVideo.style.display = 'none';
       }
       
-      // Hide frame info and timeline for character texture
-      if (frameInfo) frameInfo.classList.remove('active');
+      // Pause any currently playing video
+      if (mediaManager) {
+        const currentVideo = mediaManager.getCurrentVideoElement();
+        if (currentVideo && !currentVideo.paused) {
+          currentVideo.pause();
+        }
+        // Also cleanup video state
+        mediaManager.cleanupPreviousVideo();
+      }
+      
+      // Update file info display for character texture
+      if (fileInfoManager) {
+        // Create a mock file object for updateStillInfo
+        const mockFile = {
+          name: texturePath.split('/').pop() // Get filename from path
+        };
+        fileInfoManager.updateStillInfo(mockFile);
+      }
+      
+      // Hide timeline for character texture (frameInfo visibility is handled by updateStillInfo)
       if (timelineContainer) timelineContainer.classList.remove('active');
       if (stillInfo) stillInfo.classList.remove('active');
       
@@ -1800,6 +1676,11 @@ function loadCharacterTexture(characterType = '55to1') {
       if (textureStatus) {
         textureStatus.textContent = `Loaded: Character (${characterType === '5to1' ? '5:1' : '5.5:1'})`;
         textureStatus.classList.add('loaded');
+      }
+      
+      // Also update MediaManager's current image path so it's tracked
+      if (mediaManager) {
+        mediaManager.currentImagePath = texturePath;
       }
     },
     // onProgress callback (optional)
@@ -1821,6 +1702,12 @@ if (videoAssetSelect) {
   videoAssetSelect.addEventListener('change', (e) => {
     const selectedValue = e.target.value;
     console.log('Video asset selected:', selectedValue);
+    
+    // Store the selected asset for restoration when switching back to texture mode
+    if (selectedValue) {
+      lastSelectedVideoAsset = selectedValue;
+    }
+    
     if (selectedValue) {
       if (selectedValue === 'checkerboard5to1') {
         console.log('Loading checkerboard texture (5:1)...');

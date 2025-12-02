@@ -33,6 +33,9 @@ export class MediaManager {
     // OverlayManager reference (set after initialization)
     this.overlayManager = null;
     
+    // FileInfoManager reference (set after initialization)
+    this.fileInfoManager = null;
+    
     // State
     this.currentVideoElement = null;
     this.currentVideoPath = null;
@@ -43,6 +46,8 @@ export class MediaManager {
     this.frameContext = null;
     this.canvasTexture = null;
     this.ndiStreamWindows = new Map();
+    this.currentNDIStream = null; // MediaStream from getUserMedia
+    this.currentNDICameraName = null; // Virtual camera device name for NDI
     
     // Default video path
     this.DEFAULT_VIDEO_PATH = '/assets/videos/shG010_Eva_v12_55FP.mp4';
@@ -216,9 +221,25 @@ export class MediaManager {
   cleanupPreviousVideo() {
     if (this.currentVideoElement) {
       this.currentVideoElement.pause();
-      this.currentVideoElement.src = '';
-      this.currentVideoElement.load();
+      
+      // Stop MediaStream tracks if using camera access
+      if (this.currentVideoElement.srcObject) {
+        const stream = this.currentVideoElement.srcObject;
+        stream.getTracks().forEach(track => track.stop());
+        this.currentVideoElement.srcObject = null;
+      } else {
+        this.currentVideoElement.src = '';
+        this.currentVideoElement.load();
+      }
+      
       this.currentVideoElement = null;
+      
+      // Clean up stored stream reference
+      if (this.currentNDIStream) {
+        this.currentNDIStream.getTracks().forEach(track => track.stop());
+        this.currentNDIStream = null;
+      }
+      
       if (this.updatePlaybackButtons) {
         this.updatePlaybackButtons();
       }
@@ -252,6 +273,41 @@ export class MediaManager {
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.colorSpace = THREE.SRGBColorSpace;
     videoTexture.flipY = true;
+    // VideoTexture automatically updates, but ensure it's set up correctly
+    videoTexture.needsUpdate = true;
+    
+    // Add an update loop to force texture updates and log status
+    const debugUpdate = () => {
+      if (video.readyState >= 2 && !video.paused) { // HAVE_CURRENT_DATA
+        // Only log occasionally to avoid spam
+        if (Math.random() < 0.01) {
+          console.log('Video texture active:', {
+            width: video.videoWidth,
+            height: video.videoHeight,
+            time: video.currentTime,
+            readyState: video.readyState
+          });
+        }
+      } else {
+        // Warning if video stalls
+        if (Math.random() < 0.05) {
+          console.warn('Video texture stalled:', {
+            paused: video.paused,
+            readyState: video.readyState,
+            error: video.error
+          });
+        }
+      }
+      requestAnimationFrame(debugUpdate);
+    };
+    debugUpdate();
+
+    console.log('Created video texture from video element:', {
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+      playing: !video.paused,
+      readyState: video.readyState
+    });
     return videoTexture;
   }
   
@@ -585,11 +641,14 @@ export class MediaManager {
   
   /**
    * Load NDI stream
+   * Uses NDI Webcam Input (via browser getUserMedia) for lowest latency
+   * Falls back to WebSocket method if direct camera access fails
    */
-  loadNDIStream(streamName) {
+  async loadNDIStream(streamName) {
     if (this.frameInfo) this.frameInfo.classList.remove('active');
     if (this.stillInfo) this.stillInfo.classList.remove('active');
     this.currentImagePath = null;
+    this.currentVideoPath = `NDI:${streamName}`;
     
     // Clean up previous video
     this.cleanupPreviousVideo();
@@ -602,7 +661,7 @@ export class MediaManager {
       }
     }
     
-    // Close WebSocket
+    // Close WebSocket if open
     if (this.ndiWebSocket) {
       this.ndiWebSocket.send(JSON.stringify({ type: 'disconnect' }));
       this.ndiWebSocket.close();
@@ -621,6 +680,257 @@ export class MediaManager {
     
     if (this.textureStatus) {
       this.textureStatus.textContent = `Connecting to NDI stream: ${streamName}...`;
+      this.textureStatus.classList.remove('loaded');
+    }
+    
+    // Method 1: Try direct browser camera access (NDI Webcam Input)
+    // This provides the lowest latency as it bypasses server encoding
+    try {
+      await this.loadNDIStreamViaCamera(streamName);
+      return; // Success, exit early
+    } catch (error) {
+      console.log('Direct camera access failed, trying WebSocket fallback:', error.message);
+    }
+    
+    // Method 2: Fallback to WebSocket method (server-side streaming)
+    this.loadNDIStreamViaWebSocket(streamName);
+  }
+  
+  /**
+   * Load NDI stream via browser camera (NDI Webcam Input)
+   * This is the recommended method for lowest latency
+   */
+  async loadNDIStreamViaCamera(streamName) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('getUserMedia not supported');
+    }
+    
+    // Helper to get devices with permission check
+    const getDevicesWithPermissions = async () => {
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      let videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      // Check if labels are missing (permission needed)
+      const needsPermission = videoDevices.some(d => !d.label);
+      
+      if (needsPermission) {
+        console.log('Camera labels hidden, requesting temporary permission...');
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          // Stop tracks immediately
+          tempStream.getTracks().forEach(t => t.stop());
+          
+          // Enumerate again, now with labels
+          devices = await navigator.mediaDevices.enumerateDevices();
+          videoDevices = devices.filter(device => device.kind === 'videoinput');
+        } catch (err) {
+          console.error('Could not get camera permission:', err);
+          throw err;
+        }
+      }
+      return videoDevices;
+    };
+
+    // Get available video devices (handling permissions)
+    const videoDevices = await getDevicesWithPermissions();
+    
+    console.log('Available video devices:', videoDevices.map(d => `${d.label} (${d.deviceId})`));
+    
+    // Look for a virtual camera device suitable for NDI/OBS
+    // Common names: "NDI Video", "NDI Webcam Input", "OBS Virtual Camera", etc.
+    const virtualCamDevice = videoDevices.find(device => {
+      const label = (device.label || '').toLowerCase();
+      return (
+        label.includes('ndi') ||
+        label.includes('webcam input') ||
+        label.includes('obs') ||
+        label.includes('virtual camera')
+      );
+    });
+    
+    if (!virtualCamDevice) {
+      throw new Error('No NDI/OBS virtual camera found. Make sure OBS Virtual Camera or NDI Webcam Input is running and a source is selected.');
+    }
+    
+    console.log('Using virtual camera device for NDI:', virtualCamDevice.label);
+    
+    // Store the camera device name for display
+    this.currentNDICameraName = virtualCamDevice.label;
+    
+    // Request camera access with specific device
+    const constraints = {
+      video: {
+        deviceId: { exact: virtualCamDevice.deviceId },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      }
+    };
+    
+    console.log('Requesting user media with constraints:', constraints);
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('Stream obtained:', stream.id, 'active:', stream.active);
+    stream.getTracks().forEach(t => console.log('Track:', t.kind, t.label, t.readyState));
+    
+    // Create video element from stream
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('autoplay', '');
+    video.setAttribute('muted', '');
+    
+    // Force play
+    video.onloadedmetadata = () => {
+        console.log('Video metadata loaded, attempting play()');
+        video.play()
+            .then(() => console.log('Video playing successfully'))
+            .catch(e => console.error('Video play failed:', e));
+    };
+    
+    // Wait for video to be ready and playing
+    await new Promise((resolve, reject) => {
+      const onLoadedMetadata = () => {
+        if (video.videoWidth && video.videoHeight) {
+          // Try to play the video
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                console.log('Video is playing, dimensions:', video.videoWidth, 'x', video.videoHeight);
+                resolve();
+              })
+              .catch((playError) => {
+                console.error('Error playing video:', playError);
+                reject(new Error('Failed to play video: ' + playError.message));
+              });
+          } else {
+            // Fallback for older browsers
+            resolve();
+          }
+        } else {
+          reject(new Error('Video metadata not available'));
+        }
+      };
+      
+      video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+      video.addEventListener('error', (e) => {
+        console.error('Video error event:', e);
+        reject(new Error('Video error: ' + (video.error?.message || 'Unknown error')));
+      }, { once: true });
+      
+      // If metadata is already loaded, trigger immediately
+      if (video.readyState >= 1) {
+        onLoadedMetadata();
+      }
+      
+      // Timeout after 10 seconds
+      setTimeout(() => reject(new Error('Video load timeout')), 10000);
+    });
+    
+    if (video.error) {
+      throw new Error('Video element has error before texture creation: ' + video.error.message + ' (code ' + video.error.code + ')');
+    }
+
+    // Create video texture
+    const videoTexture = this.createVideoTexture(video);
+    // Ensure texture updates continuously
+    videoTexture.needsUpdate = true;
+    
+    // Apply texture to shader material
+    this.material.uniforms.uTexture.value = videoTexture;
+    this.material.uniforms.uHasTexture.value = 1.0;
+    this.material.uniforms.uIsImageTexture.value = 0.0;
+    this.material.needsUpdate = true;
+    
+    // Update LED shaders
+    if (this.updateLEDShaders) {
+      this.updateLEDShaders(this.ledsGroup, this.material);
+    }
+    
+    // Setup overlay video (use same stream, don't clone)
+    if (this.overlayVideo) {
+      this.overlayVideo.srcObject = stream;
+      this.overlayVideo.autoplay = true;
+      this.overlayVideo.muted = true;
+      this.overlayVideo.playsInline = true;
+      this.overlayVideo.setAttribute('playsinline', '');
+      this.overlayVideo.style.display = 'block';
+      // Ensure overlay video plays
+      this.overlayVideo.play().catch(err => {
+        console.warn('Overlay video play error:', err);
+      });
+    }
+    if (this.overlayImage) {
+      this.overlayImage.style.display = 'none';
+    }
+    
+    // Adjust aspect ratio
+    if (video.videoWidth && video.videoHeight) {
+      this.adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+    }
+    
+    // Show UI elements
+    if (this.showMappingCheckbox && this.showMappingCheckbox.checked && this.mapping) {
+      this.mapping.classList.add('active');
+    }
+    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked && this.frameInfo) {
+      this.frameInfo.classList.add('active');
+    }
+    if (this.stillInfo) this.stillInfo.classList.remove('active');
+    if (this.timelineContainer) this.timelineContainer.classList.add('active');
+    
+    if (this.playbackControls && this.playbackControls.playbackMenu) {
+      this.playbackControls.playbackMenu.style.display = 'block';
+    }
+    
+    // Verify video is actually playing
+    if (video.paused) {
+      console.warn('Video is paused, attempting to play...');
+      await video.play().catch(err => {
+        console.error('Failed to play video after setup:', err);
+        throw new Error('Video failed to play: ' + err.message);
+      });
+    }
+    
+    // Store video element and stream
+    this.currentVideoElement = video;
+    this.currentNDIStream = stream;
+    
+    // Update status
+    if (this.textureStatus) {
+      this.textureStatus.textContent = `Loaded NDI Stream (Direct): ${streamName}`;
+      this.textureStatus.classList.add('loaded');
+    }
+    
+    // Update file info with camera name instead of stream name
+    if (this.fileInfoManager) {
+      this.fileInfoManager.setNDICameraName(this.currentNDICameraName);
+    }
+    
+    if (this.updatePlaybackButtons) {
+      this.updatePlaybackButtons();
+    }
+    
+    console.log('NDI stream loaded via direct camera access:', streamName, {
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+      playing: !video.paused,
+      readyState: video.readyState,
+      cameraName: this.currentNDICameraName
+    });
+  }
+  
+  /**
+   * Load NDI stream via WebSocket (fallback method)
+   * Uses server-side FFmpeg to stream frames
+   */
+  loadNDIStreamViaWebSocket(streamName) {
+    if (this.textureStatus) {
+      this.textureStatus.textContent = `Connecting via server: ${streamName}...`;
       this.textureStatus.classList.remove('loaded');
     }
     
@@ -677,7 +987,7 @@ export class MediaManager {
             }
             
             if (this.textureStatus && !this.textureStatus.classList.contains('loaded')) {
-              this.textureStatus.textContent = `Loaded NDI Stream: ${streamName}`;
+              this.textureStatus.textContent = `Loaded NDI Stream (Server): ${streamName}`;
               this.textureStatus.classList.add('loaded');
             }
             if (this.updatePlaybackButtons) {
