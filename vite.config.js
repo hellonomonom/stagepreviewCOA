@@ -22,7 +22,17 @@ const buildTimestamp = new Date().toISOString();
 export default defineConfig({
   server: {
     port: 3000,
+    host: '0.0.0.0', // Allow access from network devices (Quest 3, etc.)
     open: true,
+    // Allow ngrok and other tunnel hosts
+    allowedHosts: [
+      'localhost',
+      '.ngrok.io',
+      '.ngrok-free.app',
+      '.ngrok-free.dev',
+      '.ngrok.app',
+      '.ngrok.dev'
+    ],
     // Middleware to serve the default video file
     middlewareMode: false,
     fs: {

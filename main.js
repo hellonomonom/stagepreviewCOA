@@ -18,6 +18,7 @@ import { MediaManager } from './src/features/MediaManager.js';
 import { FileInfoManager } from './src/features/FileInfoManager.js';
 import { OverlayManager } from './src/features/OverlayManager.js';
 import { SceneControls } from './src/features/SceneControls.js';
+import { VRManager } from './src/vr/VRManager.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -25,6 +26,9 @@ scene.background = new THREE.Color(0.004, 0.004, 0.004);
 
 // SceneControls will be initialized after DOM is ready
 let sceneControls = null;
+
+// VR Manager (will be initialized later)
+let vrManager = null;
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -44,6 +48,11 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.outputColorSpace = THREE.SRGBColorSpace; // Use sRGB for accurate color display
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
+
+// Enable WebXR support (VRManager will fully initialize it)
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+
 document.body.appendChild(renderer.domElement);
 
 // OrbitControls setup
@@ -127,6 +136,12 @@ meshLoader.setCallbacks({
   onFloorLoaded: (mesh) => {
     floorMesh = mesh;
     console.log('Floor mesh loaded');
+    
+    // Set floor mesh reference in VRManager for teleportation
+    if (vrManager) {
+      vrManager.setFloorMesh(floorMesh);
+    }
+    
     // Initialize crowd spawner when floor is loaded
     if (!crowdSpawner) {
       crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
@@ -1448,6 +1463,18 @@ function initializePlaybackControls() {
     mediaManager.playbackControls = playbackControls;
   }
   
+  // Wire up VR references if VR manager is initialized
+  if (vrManager) {
+    vrManager.setPlaybackControls(playbackControls);
+    const videoEl = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+    if (videoEl) {
+      vrManager.setVideoElement(videoEl);
+    }
+    if (settingsPanelManager) {
+      vrManager.setSettingsPanel(settingsPanelManager);
+    }
+  }
+  
   // Playback menu is now non-draggable and fixed at bottom
   // Add minimize toggle functionality
   const playbackMenuToggle = document.getElementById('playbackMenuToggle');
@@ -1900,17 +1927,96 @@ if (document.readyState === 'loading') {
   initializeCameraControls();
 }
 
+// VR Manager
+// ============================================
+// Initialize VR manager (will be initialized after camera controls)
+// Note: vrManager is declared at the top of the file
+
+function initializeVRManager() {
+  try {
+    vrManager = new VRManager(renderer, scene, camera, controls);
+  } catch (error) {
+    console.error('Failed to initialize VR Manager:', error);
+    vrManager = null;
+    return;
+  }
+  
+  // Check VR availability and show button if supported
+  setTimeout(() => {
+    if (vrManager && vrManager.isVRAvailable()) {
+      const vrButton = document.getElementById('vrToggleButton');
+      if (vrButton) {
+        vrButton.style.display = 'flex';
+        
+        // Setup VR button click handler
+        vrButton.addEventListener('click', async () => {
+          if (!vrManager.getIsVRActive()) {
+            // Enter VR
+            const success = await vrManager.enterVR();
+            if (success) {
+              vrButton.querySelector('.vr-button-text').textContent = 'Exit VR';
+              vrButton.classList.add('vr-active');
+            }
+          } else {
+            // Exit VR
+            vrManager.exitVR();
+            vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
+            vrButton.classList.remove('vr-active');
+          }
+        });
+      }
+    }
+  }, 500); // Wait a bit for WebXR initialization
+  
+  // Update button state when VR session ends
+  if (vrManager) {
+    vrManager.onVRExit(() => {
+      const vrButton = document.getElementById('vrToggleButton');
+      if (vrButton) {
+        vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
+        vrButton.classList.remove('vr-active');
+      }
+    });
+  
+    // Wire up VR references (will be set after components are initialized)
+    // Set playback controls reference when available
+    setTimeout(() => {
+      if (playbackControls && vrManager) {
+        vrManager.setPlaybackControls(playbackControls);
+      }
+      if (mediaManager && vrManager) {
+        const videoEl = mediaManager.getCurrentVideoElement();
+        if (videoEl) {
+          vrManager.setVideoElement(videoEl);
+        }
+      }
+      // Settings panel is already set globally
+      if (settingsPanelManager && vrManager) {
+        vrManager.setSettingsPanel(settingsPanelManager);
+      }
+    }, 1000);
+  }
+}
+
+// Initialize VR manager when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeVRManager);
+} else {
+  initializeVRManager();
+}
+
 // Set default video in dropdown
 if (videoAssetSelect) {
   videoAssetSelect.value = DEFAULT_VIDEO_PATH;
 }
 
 // Animation loop
+// Use setAnimationLoop for WebXR compatibility (works for both desktop and VR)
 function animate() {
-  requestAnimationFrame(animate);
-  
-  // Update controls
-  controls.update();
+  // Update controls (only if not in VR mode)
+  if (controls && (!vrManager || !vrManager.getIsVRActive())) {
+    controls.update();
+  }
   
   // Update camera position in all shader materials
   updateCameraPositionInShaders(shaderMaterials, materialReferences, camera);
@@ -1924,17 +2030,27 @@ function animate() {
     }
   }
   
-  // Update camera debug info
-  if (cameraControls) {
+  // Update camera debug info (only if not in VR mode)
+  if (cameraControls && (!vrManager || !vrManager.getIsVRActive())) {
     cameraControls.updateCameraDebug();
   }
   
-  // Render the scene
+  // Update VR systems (if VR is active)
+  if (vrManager) {
+    vrManager.update();
+  }
+  
+  // Render the scene (WebXRManager handles VR rendering automatically)
   renderer.render(scene, camera);
 }
 
-// Handle window resize
+// Handle window resize (only update if not in VR mode)
 window.addEventListener('resize', () => {
+  // Don't resize camera/renderer when in VR mode (WebXR handles it)
+  if (vrManager && vrManager.getIsVRActive()) {
+    return;
+  }
+  
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1942,6 +2058,11 @@ window.addEventListener('resize', () => {
 
 // Prevent scaling issues on orientation change
 window.addEventListener('orientationchange', () => {
+  // Don't handle orientation change in VR mode
+  if (vrManager && vrManager.getIsVRActive()) {
+    return;
+  }
+  
   // Force viewport recalculation after orientation change
   setTimeout(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
@@ -1953,8 +2074,8 @@ window.addEventListener('orientationchange', () => {
   }, 100);
 });
 
-// Start the animation loop
-animate();
+// Start the animation loop using setAnimationLoop (works for both desktop and VR)
+renderer.setAnimationLoop(animate);
 
 // Load default video at startup
 // Ensure playback controls are initialized first, then load video

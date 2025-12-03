@@ -152,3 +152,4 @@ mappingTypeSelect.addEventListener('change', (e) => {
 - [GA4 DebugView](https://support.google.com/analytics/answer/7201382) - For debugging events
 
 
+

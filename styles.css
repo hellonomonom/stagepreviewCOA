@@ -1979,3 +1979,93 @@ input[type="color"]::-moz-color-swatch {
     -webkit-font-smoothing: antialiased !important;
 }
 
+/* ============================================
+   VR Toggle Button
+   ============================================ */
+.vr-toggle-button {
+    display: none;
+    position: fixed;
+    bottom: var(--space-xl);
+    right: var(--space-xl);
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    cursor: pointer;
+    padding: var(--space-md) var(--space-xl);
+    border-radius: var(--radius-md);
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    z-index: var(--z-panel);
+    transition: all var(--transition-base);
+    box-shadow: var(--shadow-md);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
+.vr-toggle-button:hover {
+    background: var(--color-bg-button-hover);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+
+.vr-toggle-button:active {
+    background: var(--color-bg-button-active);
+    transform: translateY(0);
+    box-shadow: var(--shadow-md);
+}
+
+.vr-toggle-button.vr-active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-dark);
+}
+
+.vr-toggle-button.vr-active:hover {
+    background: var(--color-primary-hover);
+}
+
+.vr-toggle-button .material-icons {
+    font-size: 24px;
+}
+
+.vr-button-text {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+/* VR Error Message */
+.vr-error-message {
+    position: fixed;
+    top: var(--space-xl);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(200, 50, 50, 0.95);
+    color: var(--color-text);
+    padding: var(--space-md) var(--space-xl);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-align: center;
+    max-width: 90%;
+    word-wrap: break-word;
+}
+
+/* VR Overlay (for future 3D UI) */
+.vr-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: var(--z-overlay);
+}
+
