@@ -65,8 +65,11 @@ export class VRTeleportation {
     this.teleportArc.visible = false;
     
     // Ensure indicators are added to scene (will be visible in VR space)
-    // Make sure they're not affected by scene offset by adding them at scene root
-    this.scene.add(this.teleportArc);
+    if (this.vrManager && this.vrManager.addToScene) {
+      this.vrManager.addToScene(this.teleportArc);
+    } else {
+      this.scene.add(this.teleportArc);
+    }
     
     // Create target indicator (ring on the ground) - make it more visible
     const ringGeometry = new THREE.RingGeometry(0.3, 0.4, 32);
@@ -80,7 +83,11 @@ export class VRTeleportation {
     this.targetIndicator = new THREE.Mesh(ringGeometry, ringMaterial);
     this.targetIndicator.rotation.x = -Math.PI / 2; // Lay flat on ground
     this.targetIndicator.visible = false;
-    this.scene.add(this.targetIndicator);
+    if (this.vrManager && this.vrManager.addToScene) {
+      this.vrManager.addToScene(this.targetIndicator);
+    } else {
+      this.scene.add(this.targetIndicator);
+    }
     
     // Add inner circle for valid target
     const innerRingGeometry = new THREE.RingGeometry(0.1, 0.2, 16);

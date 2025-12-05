@@ -5,8 +5,7 @@ import { VRPerformance } from './VRPerformance.js';
 import { VRQualitySettings } from './VRQualitySettings.js';
 import { VRControllers } from './VRControllers.js';
 import { VRHandTracking } from './VRHandTracking.js';
-import { VRPlaybackPanel } from './VRPlaybackPanel.js';
-import { VRSettingsPanel } from './VRSettingsPanel.js';
+import { VRInputManager } from './VRInputManager.js';
 import { VRTeleportation } from './VRTeleportation.js';
 
 /**
@@ -36,6 +35,7 @@ export class VRManager {
     this.qualitySettings = null;
     this.controllers = null;
     this.handTracking = null;
+    this.inputManager = null; // Unified input manager (Phase 1)
     this.teleportation = null;
     this.playbackPanel = null;
     this.settingsPanel = null;
@@ -101,7 +101,21 @@ export class VRManager {
     }
     
     try {
-      // Teleportation system (will be initialized when entering VR)
+      // Unified Input Manager (Phase 1) - requires controllers and handTracking
+      this.inputManager = new VRInputManager(
+        this.renderer,
+        this.scene,
+        this.camera,
+        this.controllers,
+        this.handTracking
+      );
+    } catch (error) {
+      console.error('Failed to initialize VR Input Manager:', error);
+      this.inputManager = null;
+    }
+    
+    try {
+      // Teleportation system
       this.teleportation = new VRTeleportation(
         this.renderer,
         this.scene,
@@ -109,7 +123,7 @@ export class VRManager {
         this.controllers,
         this.handTracking,
         this.floorMeshRef,
-        this // Pass VRManager reference
+        this
       );
     } catch (error) {
       console.error('Failed to initialize VR Teleportation:', error);
@@ -193,6 +207,16 @@ export class VRManager {
       this.setVRStartingPosition(this.vrCameraPreset);
       
       this.isVRActive = true;
+
+      // Immediately initialize controllers so laser pointers are created right away
+      try {
+        if (this.controllers && this.xrSession) {
+          this.controllers.init(this.xrSession);
+          console.log('VRControllers: Initialized immediately on enterVR');
+        }
+      } catch (error) {
+        console.error('Failed to initialize controllers immediately on enterVR:', error);
+      }
       
       // Disable OrbitControls in VR (head tracking replaces it)
       if (this.controls) {
@@ -210,10 +234,16 @@ export class VRManager {
         this.onSessionEnd();
       });
       
-      // Initialize VR features after session is established
-      requestAnimationFrame(() => {
-        this.initVRComponents();
-      });
+      // Initialize other VR features after session is established
+      // Use a small delay to ensure VR session is fully ready
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          this.initVRComponents();
+          
+          // Ensure any objects added to scene after offset group creation are moved to offset group
+          this.ensureObjectsInOffsetGroup();
+        });
+      }, 100);
       
       console.log('Entered VR mode');
       this.triggerVREnter();
@@ -258,61 +288,20 @@ export class VRManager {
 
   /**
    * Initialize VR components after session starts
+   * Initializes elements asynchronously with delays to improve performance
    * @private
    */
   initVRComponents() {
     // Lazy-load VR features if not already initialized
-    if (!this.presetNavigation || !this.performance) {
+    // This ensures inputManager is created before we try to initialize it
+    if (!this.presetNavigation || !this.performance || !this.inputManager) {
       this.initVRFeatures();
     }
     
-    try {
-      // Initialize controllers
-      if (this.controllers) {
-        this.controllers.init(this.xrSession);
-        
-        // Setup teleportation with controllers
-        this.setupTeleportationWithControllers();
-      }
-    } catch (error) {
-      console.error('Failed to initialize controllers:', error);
-    }
+    // Initialize with staggered delays to prevent frame drops
     
+    // Immediate: Core performance settings (no visual impact)
     try {
-      // Initialize hand tracking
-      if (this.handTracking) {
-        this.handTracking.init(this.xrSession).catch(err => {
-          console.warn('Hand tracking initialization failed:', err);
-        });
-        
-        // Setup teleportation with hand tracking
-        this.setupTeleportationWithHandTracking();
-      }
-    } catch (error) {
-      console.error('Failed to initialize hand tracking:', error);
-    }
-    
-    try {
-      // Initialize teleportation system
-      if (this.teleportation) {
-        // Update floor mesh reference if available
-        if (this.floorMeshRef) {
-          this.teleportation.setFloorMesh(this.floorMeshRef);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to setup teleportation:', error);
-    }
-    
-    try {
-      // Initialize VR UI panels
-      this.initVRUI();
-    } catch (error) {
-      console.error('Failed to initialize VR UI:', error);
-    }
-    
-    try {
-      // Enable performance optimization
       if (this.performance) {
         this.performance.enableVROptimization();
       }
@@ -321,7 +310,6 @@ export class VRManager {
     }
     
     try {
-      // Apply quality settings
       if (this.qualitySettings) {
         this.qualitySettings.applyPreset('high');
       }
@@ -329,14 +317,123 @@ export class VRManager {
       console.error('Failed to apply quality settings:', error);
     }
     
-    try {
-      // Create preset indicators
-      if (this.presetNavigation) {
-        this.presetNavigation.createPresetIndicators(this.scene);
+    // Short delay (100ms): Controllers and laser rays
+    setTimeout(() => {
+      if (!this.isVRActive || !this.xrSession) return;
+      
+      try {
+        if (this.controllers && this.xrSession) {
+          this.controllers.init(this.xrSession);
+          console.log('VRControllers: Initialized (delayed)');
+        }
+      } catch (error) {
+        console.error('Failed to initialize controllers:', error);
       }
-    } catch (error) {
-      console.error('Failed to create preset indicators:', error);
-    }
+    }, 100);
+    
+    // Medium delay (200ms): Hand tracking
+    setTimeout(() => {
+      if (!this.isVRActive || !this.xrSession) return;
+      
+      try {
+        if (this.handTracking && this.xrSession) {
+          this.handTracking.init(this.xrSession).catch(err => {
+            console.warn('Hand tracking initialization failed:', err);
+          });
+          console.log('VRHandTracking: Initialized (delayed)');
+        }
+      } catch (error) {
+        console.error('Failed to initialize hand tracking:', error);
+      }
+    }, 200);
+    
+    // Medium delay (300ms): Input manager and teleportation inputs
+    setTimeout(() => {
+      if (!this.isVRActive || !this.xrSession) return;
+      
+      // Ensure inputManager exists before initializing
+      if (!this.inputManager) {
+        // Initialize VR features if not already done
+        if (!this.presetNavigation || !this.performance) {
+          this.initVRFeatures();
+        }
+      }
+      
+      try {
+        if (this.inputManager && this.xrSession) {
+          this.inputManager.init(this.xrSession);
+          console.log('VRInputManager: Initialized (delayed)');
+        } else {
+          console.warn('VRInputManager: Not available for initialization');
+        }
+      } catch (error) {
+        console.error('Failed to initialize input manager:', error);
+        // Retry initialization
+        setTimeout(() => {
+          if (this.inputManager && this.xrSession && !this.inputManager.isReady()) {
+            try {
+              this.inputManager.init(this.xrSession);
+            } catch (retryError) {
+              console.error('VRInputManager: Retry initialization failed:', retryError);
+            }
+          }
+        }, 500);
+      }
+      
+      try {
+        // Setup teleportation inputs
+        if (this.teleportation && this.controllers) {
+          // Right controller trigger to teleport
+          this.controllers.onSelectStart((event, hand) => {
+            // Don't teleport if interacting with UI/Objects
+            if (this.inputManager && this.inputManager.getHoveredObject()) return;
+            
+            if (hand === 'right') this.teleportation.startTeleport('controller', 'right');
+          });
+          this.controllers.onSelectEnd((event, hand) => {
+            if (hand === 'right') this.teleportation.executeTeleport();
+          });
+        }
+        
+        if (this.teleportation && this.handTracking) {
+          // Right hand pinch to teleport
+          this.handTracking.onPinchStart((hand) => {
+            // Don't teleport if interacting with UI/Objects
+            if (this.inputManager && this.inputManager.getHoveredObject()) return;
+            
+            if (hand === 'right') this.teleportation.startTeleport('hand', 'right');
+          });
+          this.handTracking.onPinchEnd((hand) => {
+            if (hand === 'right') this.teleportation.executeTeleport();
+          });
+        }
+      } catch (error) {
+        console.error('Failed to setup teleportation inputs:', error);
+      }
+    }, 300);
+    
+    // Longer delay (500ms): VR UI panels and preset indicators (teleportation locations)
+    setTimeout(() => {
+      if (!this.isVRActive || !this.xrSession) return;
+      
+      try {
+        // Initialize VR UI panels
+        this.initVRUI();
+        console.log('VR UI: Initialized (delayed)');
+      } catch (error) {
+        console.error('Failed to initialize VR UI:', error);
+      }
+      
+      try {
+        // Create preset indicators (teleportation locations)
+        if (this.presetNavigation) {
+          this.presetNavigation.createPresetIndicators(this.scene);
+          console.log('Preset indicators: Created (delayed)');
+        }
+      } catch (error) {
+        console.error('Failed to create preset indicators:', error);
+      }
+    }, 500);
   }
 
   /**
@@ -344,51 +441,9 @@ export class VRManager {
    * @private
    */
   initVRUI() {
-    try {
-      // Create playback panel (hidden by default)
-      this.playbackPanel = new VRPlaybackPanel({
-        playbackControls: this.playbackControlsRef,
-        videoElement: this.videoElementRef
-      });
-      if (this.playbackPanel && this.playbackPanel.getGroup()) {
-        this.playbackPanel.setVisible(false); // Start hidden
-        this.scene.add(this.playbackPanel.getGroup());
-      }
-    } catch (error) {
-      console.error('Failed to create VR playback panel:', error);
-      this.playbackPanel = null;
-    }
-    
-    try {
-      // Create settings panel (initially hidden)
-      this.settingsPanel = new VRSettingsPanel({
-        settingsPanel: this.settingsPanelRef,
-        onMappingChange: (mappingType) => {
-          // Handle mapping change
-          if (this.settingsPanelRef) {
-            // Trigger mapping change event
-            const event = new CustomEvent('mappingChange', { detail: mappingType });
-            document.dispatchEvent(event);
-          }
-        },
-        onSourceTypeChange: (sourceType) => {
-          // Handle source type change
-          if (this.settingsPanelRef) {
-            const event = new CustomEvent('sourceTypeChange', { detail: sourceType });
-            document.dispatchEvent(event);
-          }
-        }
-      });
-      if (this.settingsPanel) {
-        this.settingsPanel.setVisible(false); // Start hidden
-        if (this.settingsPanel.getGroup()) {
-          this.scene.add(this.settingsPanel.getGroup());
-        }
-      }
-    } catch (error) {
-      console.error('Failed to create VR settings panel:', error);
-      this.settingsPanel = null;
-    }
+    // VR menu panels removed - no longer creating playback or settings panels
+    this.playbackPanel = null;
+    this.settingsPanel = null;
   }
 
   /**
@@ -445,16 +500,17 @@ export class VRManager {
       this.handTracking.dispose();
     }
     
-    // Dispose UI panels
-    if (this.playbackPanel) {
-      this.playbackPanel.dispose();
-      this.playbackPanel = null;
+    // Dispose input manager
+    if (this.inputManager) {
+      this.inputManager.dispose();
     }
     
-    if (this.settingsPanel) {
-      this.settingsPanel.dispose();
-      this.settingsPanel = null;
+    // Dispose teleportation
+    if (this.teleportation) {
+      this.teleportation.dispose();
     }
+    
+    // VR menu panels removed - no cleanup needed
   }
 
   /**
@@ -473,6 +529,15 @@ export class VRManager {
     }
     
     try {
+      // Update controllers
+      if (this.controllers) {
+        this.controllers.update();
+      }
+    } catch (error) {
+      console.error('Error updating controllers:', error);
+    }
+    
+    try {
       // Update hand tracking
       if (this.handTracking) {
         this.handTracking.update();
@@ -482,16 +547,16 @@ export class VRManager {
     }
     
     try {
-      // Update controllers (for button polling - B/Y buttons)
-      if (this.controllers) {
-        this.controllers.update();
+      // Update unified input manager (Phase 1)
+      if (this.inputManager) {
+        this.inputManager.update();
       }
     } catch (error) {
-      console.error('Error updating controllers:', error);
+      console.error('Error updating input manager:', error);
     }
     
     try {
-      // Update teleportation system
+      // Update teleportation
       if (this.teleportation) {
         this.teleportation.update();
       }
@@ -499,18 +564,8 @@ export class VRManager {
       console.error('Error updating teleportation:', error);
     }
     
-    try {
-      // Update UI panels position
-      if (this.playbackPanel && this.camera) {
-        this.playbackPanel.update(this.camera);
-      }
-      
-      if (this.settingsPanel && this.camera) {
-        this.settingsPanel.update(this.camera);
-      }
-    } catch (error) {
-      console.error('Error updating VR UI panels:', error);
-    }
+    
+    // VR menu panels removed - no longer updating
   }
 
   /**
@@ -533,12 +588,20 @@ export class VRManager {
       this.vrSceneOffset.name = 'VRSceneOffset';
       
       // Store original scene children and move them to offset group
+      // EXCEPT controllers and hands - they must stay in scene root to track relative to VR origin
       const children = [...this.scene.children];
       children.forEach(child => {
         // Skip the offset group itself if it exists
         if (child !== this.vrSceneOffset) {
-          this.scene.remove(child);
-          this.vrSceneOffset.add(child);
+          // Don't move controllers or hands - they track relative to VR origin
+          const isController = child.userData && (child.userData.hand || child.userData.isController);
+          const isHand = child.userData && (child.userData.handedness || child.userData.isHand);
+          const isControllerRay = child.name && child.name.includes('ControllerRay');
+          
+          if (!isController && !isHand && !isControllerRay) {
+            this.scene.remove(child);
+            this.vrSceneOffset.add(child);
+          }
         }
       });
       
@@ -587,11 +650,19 @@ export class VRManager {
       
       // Now move all scene children into offset group
       // Children will inherit the offset position immediately
+      // EXCEPT controllers and hands - they must stay in scene root to track relative to VR origin
       const children = [...this.scene.children];
       children.forEach(child => {
         if (child !== this.vrSceneOffset) {
-          this.scene.remove(child);
-          this.vrSceneOffset.add(child);
+          // Don't move controllers or hands - they track relative to VR origin
+          const isController = child.userData && child.userData.hand;
+          const isHand = child.userData && child.userData.handedness;
+          const isControllerRay = child.name && child.name.includes('ControllerRay');
+          
+          if (!isController && !isHand && !isControllerRay) {
+            this.scene.remove(child);
+            this.vrSceneOffset.add(child);
+          }
         }
       });
       
@@ -638,6 +709,56 @@ export class VRManager {
       
       console.log('VR scene offset reset');
     }
+  }
+
+  /**
+   * Add object to scene - automatically handles VR offset group
+   * Use this method instead of scene.add() to ensure objects are in the correct parent
+   * @param {THREE.Object3D} object - Object to add to scene
+   */
+  addToScene(object) {
+    if (!object) return;
+    
+    // If VR offset group exists, add to it; otherwise add to scene
+    if (this.vrSceneOffset) {
+      // Remove from current parent if any
+      if (object.parent) {
+        object.parent.remove(object);
+      }
+      this.vrSceneOffset.add(object);
+    } else {
+      // Remove from current parent if any
+      if (object.parent) {
+        object.parent.remove(object);
+      }
+      this.scene.add(object);
+    }
+  }
+
+  /**
+   * Ensure all scene children are in the offset group (if VR is active)
+   * Call this after adding objects to scene when VR is active
+   * @private
+   */
+  ensureObjectsInOffsetGroup() {
+    if (!this.vrSceneOffset || !this.isVRActive) return;
+    
+    // Move any objects in scene (except offset group itself) to offset group
+    // EXCEPT controllers and hands - they must stay in scene root to track relative to VR origin
+    const children = [...this.scene.children];
+    children.forEach(child => {
+      if (child !== this.vrSceneOffset && child.parent === this.scene) {
+        // Don't move controllers or hands - they track relative to VR origin
+        const isController = child.userData && (child.userData.hand || child.userData.isController);
+        const isHand = child.userData && (child.userData.handedness || child.userData.isHand);
+        const isControllerRay = child.name && child.name.includes('ControllerRay');
+        
+        if (!isController && !isHand && !isControllerRay) {
+          this.scene.remove(child);
+          this.vrSceneOffset.add(child);
+        }
+      }
+    });
   }
 
   /**
@@ -897,7 +1018,7 @@ export class VRManager {
   }
 
   /**
-   * Set floor mesh reference for teleportation
+   * Set floor mesh reference (kept for potential future use)
    * @param {THREE.Mesh} floorMesh
    */
   setFloorMesh(floorMesh) {
@@ -909,94 +1030,66 @@ export class VRManager {
 
   /**
    * Toggle VR menu visibility
+   * @deprecated VR menu has been removed
    */
   toggleVRMenu() {
-    if (!this.playbackPanel && !this.settingsPanel) return;
-    
-    // Determine current state - if any panel is visible, hide both; otherwise show playback panel
-    const playbackVisible = this.playbackPanel ? this.playbackPanel.isVisible() : false;
-    const settingsVisible = this.settingsPanel ? this.settingsPanel.isVisible() : false;
-    const anyVisible = playbackVisible || settingsVisible;
-    
-    if (anyVisible) {
-      // Hide both panels
-      if (this.playbackPanel) {
-        this.playbackPanel.setVisible(false);
-      }
-      if (this.settingsPanel) {
-        this.settingsPanel.setVisible(false);
-      }
-    } else {
-      // Show playback panel
-      if (this.playbackPanel) {
-        this.playbackPanel.setVisible(true);
-      }
-    }
-    
-    console.log('VR menu toggled:', !anyVisible ? 'shown' : 'hidden');
+    // VR menu removed - method kept for compatibility but does nothing
   }
 
   /**
-   * Setup teleportation with controllers
-   * @private
+   * Wait for input manager to be ready
+   * Helper method for UI/navigation elements to reliably wait for inputManager initialization
+   * @param {Function} callback - Callback to execute when inputManager is ready
+   * @param {number} timeout - Timeout in milliseconds (default: 10000)
+   * @returns {Promise<VRInputManager>} Promise that resolves with inputManager when ready
+   * 
+   * @example
+   * // Using promise
+   * vrManager.waitForInputManager().then(inputManager => {
+   *   inputManager.registerInteractiveObject(myButton);
+   * });
+   * 
+   * @example
+   * // Using callback
+   * vrManager.waitForInputManager((inputManager) => {
+   *   inputManager.registerInteractiveObject(myButton);
+   * });
    */
-  setupTeleportationWithControllers() {
-    if (!this.teleportation || !this.controllers) return;
-    
-    // For now, use trigger to toggle teleportation mode
-    // Right controller trigger = start teleport, release = execute
-    // In a full implementation, you'd want to use thumbstick input
-    this.controllers.onSelectStart((event, hand) => {
-      if (hand === 'right' && this.teleportation) {
-        this.teleportation.startTeleport('controller', 'right');
+  async waitForInputManager(callback, timeout = 10000) {
+    // Ensure inputManager is created (lazy initialization)
+    if (!this.inputManager) {
+      // Initialize VR features if not already done
+      if (!this.presetNavigation || !this.performance) {
+        this.initVRFeatures();
       }
-    });
+      
+      // Wait a bit for inputManager to be created
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
-    this.controllers.onSelectEnd((event, hand) => {
-      if (hand === 'right' && this.teleportation && this.teleportation.isTeleporting) {
-        if (this.teleportation.isValidTarget) {
-          this.teleportation.executeTeleport();
-        } else {
-          this.teleportation.stopTeleport();
-        }
+    if (!this.inputManager) {
+      const error = new Error('VRInputManager not available');
+      console.error('VRManager.waitForInputManager:', error);
+      if (callback) callback(null);
+      return Promise.reject(error);
+    }
+    
+    // Wait for inputManager to be ready
+    try {
+      await this.inputManager.waitForReady();
+      
+      if (callback) {
+        callback(this.inputManager);
       }
-    });
-    
-    // Setup B/Y button handlers for menu toggle
-    if (this.controllers.onButtonPress) {
-      this.controllers.onButtonPress((hand, buttonName, buttonIndex) => {
-        // B button (right) or Y button (left) toggles menu
-        if (buttonName === 'B' || buttonName === 'Y') {
-          this.toggleVRMenu();
-        }
-      });
+      
+      return Promise.resolve(this.inputManager);
+    } catch (error) {
+      console.error('VRManager.waitForInputManager: Error waiting for ready state:', error);
+      if (callback) callback(null);
+      return Promise.reject(error);
     }
   }
 
-  /**
-   * Setup teleportation with hand tracking
-   * @private
-   */
-  setupTeleportationWithHandTracking() {
-    if (!this.teleportation || !this.handTracking) return;
-    
-    // Pinch with right hand to start teleport, release to execute
-    this.handTracking.onPinchStart((hand, thumbPos, indexPos) => {
-      if (hand === 'right' && this.teleportation) {
-        this.teleportation.startTeleport('hand', 'right');
-      }
-    });
-    
-    this.handTracking.onPinchEnd((hand) => {
-      if (hand === 'right' && this.teleportation && this.teleportation.isTeleporting) {
-        if (this.teleportation.isValidTarget) {
-          this.teleportation.executeTeleport();
-        } else {
-          this.teleportation.stopTeleport();
-        }
-      }
-    });
-  }
 }
 
 

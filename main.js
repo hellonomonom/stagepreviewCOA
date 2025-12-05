@@ -29,6 +29,7 @@ let sceneControls = null;
 
 // VR Manager (will be initialized later)
 let vrManager = null;
+let vrFloorMesh = null; // store floor mesh for VR features
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -135,12 +136,16 @@ meshLoader.setCallbacks({
   },
   onFloorLoaded: (mesh) => {
     floorMesh = mesh;
+    vrFloorMesh = mesh;
     console.log('Floor mesh loaded');
     
     // Set floor mesh reference in VRManager for teleportation
     if (vrManager) {
       vrManager.setFloorMesh(floorMesh);
     }
+    
+    // Create floating VR button once floor is available
+    createVRFloatingButton();
     
     // Initialize crowd spawner when floor is loaded
     if (!crowdSpawner) {
@@ -1995,14 +2000,159 @@ function initializeVRManager() {
         vrManager.setSettingsPanel(settingsPanelManager);
       }
     }, 1000);
+    
+    // Create test interactive object for VR
   }
 }
+
+/**
+ * Create a test interactive object for VR input testing
+ * Places it 2m in front of the default VR spawn position
+ */
+// Test VR object creation removed
 
 // Initialize VR manager when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initializeVRManager);
 } else {
   initializeVRManager();
+}
+
+// Ensure floating button creation when VR session starts (in case floor is ready first)
+if (vrManager) {
+  vrManager.onVREnter(() => {
+    createVRFloatingButton();
+  });
+}
+
+/**
+ * Create a simple floating VR button that teleports to a random floor location
+ */
+function createVRFloatingButton() {
+  // Guard: need vrManager and floor mesh (input manager can be deferred)
+  if (!vrManager || !vrFloorMesh) {
+    // Retry shortly until ready
+    setTimeout(createVRFloatingButton, 500);
+    return;
+  }
+
+  // Avoid duplicate creation
+  if (vrManager._nextCamButton) return;
+
+  // Button geometry
+  const geom = new THREE.BoxGeometry(0.25, 0.1, 0.02);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x0077ff,
+    emissive: 0x001122,
+    metalness: 0.1,
+    roughness: 0.5
+  });
+  const button = new THREE.Mesh(geom, mat);
+  button.name = 'VRNextCamButton';
+  // Position the button where the test cube used to be
+  button.position.set(-16.03, 1.14, 64.33);
+  button.userData.originalColor = mat.color.clone();
+  button.userData.originalEmissive = mat.emissive.clone();
+
+  // Add label (simple canvas texture)
+  const labelGeom = new THREE.PlaneGeometry(0.22, 0.06);
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 256;
+  labelCanvas.height = 64;
+  const ctx = labelCanvas.getContext('2d');
+  ctx.fillStyle = '#0b1a2b';
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '32px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Next Cam', 128, 32);
+  const labelTex = new THREE.CanvasTexture(labelCanvas);
+  labelTex.encoding = THREE.sRGBEncoding;
+  const labelMat = new THREE.MeshBasicMaterial({ map: labelTex, transparent: true });
+  const label = new THREE.Mesh(labelGeom, labelMat);
+  label.position.set(0, 0, 0.012); // slightly in front
+  button.add(label);
+
+  // Add to scene respecting VR offset
+  vrManager.addToScene(button);
+
+  // Register as interactive (using reliable waitForInputManager helper)
+  vrManager.waitForInputManager((inputManager) => {
+    if (!inputManager) {
+      console.error('VR Next Cam Button: Failed to get inputManager');
+      return;
+    }
+    
+    inputManager.registerInteractiveObject(button);
+
+    // Hover feedback
+    inputManager.onHoverStart((object) => {
+      if (object === button) {
+        mat.color.setHex(0x33aaff);
+        mat.emissive.setHex(0x113355);
+        button.scale.set(1.05, 1.05, 1.05);
+      }
+    });
+    inputManager.onHoverEnd((object) => {
+      if (object === button) {
+        mat.color.copy(button.userData.originalColor);
+        mat.emissive.copy(button.userData.originalEmissive);
+        button.scale.set(1, 1, 1);
+      }
+    });
+
+    // Select action: teleport to random floor location
+    inputManager.onSelectStart((object) => {
+      if (object === button) {
+        teleportToRandomFloorLocation();
+      }
+    });
+    
+    console.log('VR Next Cam Button: Successfully registered with inputManager');
+  }).catch((error) => {
+    console.error('VR Next Cam Button: Error waiting for inputManager:', error);
+  });
+
+  // Store reference to avoid duplicates
+  vrManager._nextCamButton = button;
+}
+
+/**
+ * Teleport to a random point on the floor mesh
+ */
+function teleportToRandomFloorLocation() {
+  if (!vrManager || !vrManager.vrSceneOffset || !vrFloorMesh) {
+    console.warn('VR Next Cam: Missing VR manager, offset group, or floor mesh');
+    return;
+  }
+
+  // Compute bounding box of floor mesh (world space)
+  const bbox = new THREE.Box3().setFromObject(vrFloorMesh);
+  if (!bbox.isEmpty()) {
+    // Try a few times to find a valid point on the floor
+    const raycaster = new THREE.Raycaster();
+    const attempts = 8;
+    for (let i = 0; i < attempts; i++) {
+      const x = THREE.MathUtils.lerp(bbox.min.x, bbox.max.x, Math.random());
+      const z = THREE.MathUtils.lerp(bbox.min.z, bbox.max.z, Math.random());
+      // Cast down from above the bbox
+      const origin = new THREE.Vector3(x, bbox.max.y + 5, z);
+      const dir = new THREE.Vector3(0, -1, 0);
+      raycaster.set(origin, dir);
+      raycaster.far = bbox.max.y - bbox.min.y + 10;
+      const hits = raycaster.intersectObject(vrFloorMesh, true);
+      if (hits.length > 0) {
+        const target = hits[0].point;
+        // Move scene offset so user appears at target
+        const offset = new THREE.Vector3(-target.x, -target.y, -target.z);
+        vrManager.vrSceneOffset.position.copy(offset);
+        console.log('VR Next Cam: Teleported to', target);
+        return;
+      }
+    }
+  }
+  console.warn('VR Next Cam: Could not find a valid floor point');
 }
 
 // Set default video in dropdown
