@@ -69,33 +69,22 @@ export class VRHandTracking {
     // Check if hand tracking is supported
     if (!xrSession.enabledFeatures || !xrSession.enabledFeatures.includes('hand-tracking')) {
       console.warn('VRHandTracking: Hand tracking not enabled in session');
+      console.log('VRHandTracking: Available features:', xrSession.enabledFeatures);
       return;
     }
 
-    // Create hand spaces
-    this.leftHand = this.renderer.xr.getHand(0);
-    this.rightHand = this.renderer.xr.getHand(1);
+    console.log('VRHandTracking: Hand tracking feature is enabled');
 
-    // Add hands to scene
-    if (this.leftHand) {
-      this.scene.add(this.leftHand);
-      this.setupHand(this.leftHand, 'left');
-    }
-
-    if (this.rightHand) {
-      this.scene.add(this.rightHand);
-      this.setupHand(this.rightHand, 'right');
-    }
-
-    // Listen for hand tracking events
+    // Listen for hand tracking events FIRST, before checking input sources
+    // This ensures we catch hands as soon as they appear
     xrSession.addEventListener('inputsourceschange', (event) => {
       this.handleInputSourcesChange(event);
     });
 
-    // Check existing input sources
+    // Check existing input sources - this will create hand objects dynamically
     this.checkInputSources(xrSession);
 
-    console.log('VRHandTracking: Initialized');
+    console.log('VRHandTracking: Initialized, waiting for hand input sources');
   }
 
   /**
@@ -158,10 +147,12 @@ export class VRHandTracking {
     // Handle removed input sources
     event.removed.forEach((inputSource) => {
       if (inputSource.targetRayMode === 'tracked-pointer' && inputSource.hand) {
-        const hand = inputSource.hand;
+        // Use handedness (string: 'left' or 'right'), not hand (XRHand object)
+        const hand = inputSource.handedness;
         if (hand === 'left' || hand === 'right') {
           this.isTracking[hand] = false;
           this.triggerHandTrackingEnd(inputSource, hand);
+          console.log(`VRHandTracking: Stopped tracking ${hand} hand`);
         }
       }
     });
@@ -172,10 +163,22 @@ export class VRHandTracking {
    * @private
    */
   checkInputSources(xrSession) {
-    if (!xrSession || !xrSession.inputSources) return;
+    if (!xrSession || !xrSession.inputSources) {
+      console.log('VRHandTracking: No input sources available yet');
+      return;
+    }
 
-    xrSession.inputSources.forEach((inputSource) => {
+    console.log(`VRHandTracking: Checking ${xrSession.inputSources.length} input sources`);
+    
+    xrSession.inputSources.forEach((inputSource, index) => {
+      const hasHand = !!inputSource.hand;
+      const handedness = inputSource.handedness;
+      const targetRayMode = inputSource.targetRayMode;
+      
+      console.log(`VRHandTracking: Input source ${index}: targetRayMode=${targetRayMode}, handedness=${handedness}, hasHand=${hasHand}`);
+      
       if (inputSource.targetRayMode === 'tracked-pointer' && inputSource.hand) {
+        console.log(`VRHandTracking: Found hand tracking input source: ${handedness}`);
         this.checkInputSource(inputSource);
       }
     });
@@ -186,22 +189,79 @@ export class VRHandTracking {
    * @private
    */
   checkInputSource(inputSource) {
-    const hand = inputSource.hand;
-    
-    if (hand !== 'left' && hand !== 'right') return;
+    // Verify this is a hand tracking input source
+    if (!inputSource.hand) {
+      return; // Not a hand tracking input
+    }
 
-    // Get the hand object for this hand
-    const handObject = hand === 'left' ? this.leftHand : this.rightHand;
+    // Use handedness (string: 'left' or 'right'), not hand (XRHand object)
+    const handedness = inputSource.handedness;
     
-    if (!handObject) {
-      console.warn(`VRHandTracking: No hand object for ${hand} hand`);
+    if (handedness !== 'left' && handedness !== 'right') {
+      console.warn(`VRHandTracking: Unknown handedness: ${handedness}`);
       return;
     }
 
+    // Get or create the hand object for this handedness
+    let handObject = handedness === 'left' ? this.leftHand : this.rightHand;
+    
+    // If hand object doesn't exist, get it from Three.js XR system or create from input source
+    if (!handObject) {
+      console.log(`VRHandTracking: Setting up ${handedness} hand object from input source`);
+      
+      try {
+        // Try to get hand space from Three.js renderer
+        // getHand(index) where index 0 = left, 1 = right
+        const handIndex = handedness === 'left' ? 0 : 1;
+        let handSpace = this.renderer.xr.getHand(handIndex);
+        
+        // If getHand doesn't work, try to use the input source's hand directly
+        if (!handSpace && inputSource.hand) {
+          // The input source has a hand property that's an XRHandSpace
+          // This should be added to the scene by Three.js automatically
+          // But we can access it directly
+          handSpace = inputSource.hand;
+        }
+        
+        if (handSpace) {
+          // Store reference to the hand space
+          if (handedness === 'left') {
+            this.leftHand = handSpace;
+          } else {
+            this.rightHand = handSpace;
+          }
+          
+          // Setup the hand (add to scene if not already added)
+          if (handSpace.parent !== this.scene) {
+            this.scene.add(handSpace);
+          }
+          this.setupHand(handSpace, handedness);
+          
+          // Store input source reference for later use
+          handSpace.userData.inputSource = inputSource;
+          
+          handObject = handSpace;
+          
+          const jointCount = handSpace.joints ? Object.keys(handSpace.joints).length : 0;
+          console.log(`VRHandTracking: Set up ${handedness} hand object with ${jointCount} joints`);
+        } else {
+          console.warn(`VRHandTracking: Could not get hand space for ${handedness} hand`);
+          return;
+        }
+      } catch (error) {
+        console.error(`VRHandTracking: Error setting up ${handedness} hand object:`, error);
+        return;
+      }
+    } else {
+      // Update the input source reference if hand object already exists
+      handObject.userData.inputSource = inputSource;
+    }
+
     // Mark as tracking
-    if (!this.isTracking[hand]) {
-      this.isTracking[hand] = true;
-      this.triggerHandTrackingStart(inputSource, hand);
+    if (!this.isTracking[handedness]) {
+      this.isTracking[handedness] = true;
+      this.triggerHandTrackingStart(inputSource, handedness);
+      console.log(`VRHandTracking: Started tracking ${handedness} hand`);
     }
   }
 
@@ -213,7 +273,12 @@ export class VRHandTracking {
   getPinchRay(hand) {
     const handObject = hand === 'left' ? this.leftHand : this.rightHand;
     
-    if (!handObject || !this.isTracking[hand] || !handObject.joints) {
+    if (!handObject || !this.isTracking[hand]) {
+      return null;
+    }
+
+    // The hand object is an XRHandSpace which has joints directly
+    if (!handObject.joints) {
       return null;
     }
 
@@ -251,7 +316,12 @@ export class VRHandTracking {
   getHandRay(hand) {
     const handObject = hand === 'left' ? this.leftHand : this.rightHand;
     
-    if (!handObject || !this.isTracking[hand] || !handObject.joints) {
+    if (!handObject || !this.isTracking[hand]) {
+      return null;
+    }
+
+    // The hand object is an XRHandSpace which has joints directly
+    if (!handObject.joints) {
       return null;
     }
 
@@ -300,13 +370,24 @@ export class VRHandTracking {
    * Update hand tracking (call each frame)
    */
   update() {
+    // Re-check input sources periodically to catch hands that appear later
+    // This is important for Quest 3 which may not provide hands immediately
+    if (this.xrSession && (!this.leftHand || !this.rightHand)) {
+      // Only check occasionally to avoid spam (every 60 frames ~1 second at 60fps)
+      if (!this._lastInputSourceCheck || this._frameCount - this._lastInputSourceCheck > 60) {
+        this.checkInputSources(this.xrSession);
+        this._lastInputSourceCheck = this._frameCount || 0;
+      }
+      this._frameCount = (this._frameCount || 0) + 1;
+    }
+
     if (!this.leftHand && !this.rightHand) return;
 
     // Update pinch detection
-    if (this.leftHand) {
+    if (this.leftHand && this.isTracking.left) {
       this.updatePinchDetection('left');
     }
-    if (this.rightHand) {
+    if (this.rightHand && this.isTracking.right) {
       this.updatePinchDetection('right');
     }
 
@@ -321,7 +402,12 @@ export class VRHandTracking {
   updatePinchDetection(hand) {
     const handObject = hand === 'left' ? this.leftHand : this.rightHand;
     
-    if (!handObject || !this.isTracking[hand] || !handObject.joints) {
+    if (!handObject || !this.isTracking[hand]) {
+      return;
+    }
+
+    // The hand object is an XRHandSpace which has joints directly
+    if (!handObject.joints) {
       return;
     }
 

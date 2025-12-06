@@ -62,3 +62,5 @@ If teleportation still doesn't work:
 3. Try increasing `maxTeleportDistance` if targets are too far
 4. Check if floor mesh is inside VR scene offset group (should work automatically)
 
+
+

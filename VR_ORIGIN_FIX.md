@@ -29,3 +29,5 @@ The offset is now applied instantly when entering VR, preventing any origin flas
 
 **The origin flash should now be fixed!** When you enter VR, you'll appear directly at the correct starting position.
 
+
+

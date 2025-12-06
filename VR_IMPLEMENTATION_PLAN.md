@@ -295,3 +295,5 @@ New tab in Settings Panel:
 6. **Polish and optimize** - Performance tuning
 
 
+
+

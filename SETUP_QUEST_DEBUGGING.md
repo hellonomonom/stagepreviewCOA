@@ -95,3 +95,5 @@ Once console is working:
 3. Press trigger (for teleportation)
 4. Check console for debug messages!
 
+
+

@@ -807,7 +807,7 @@ if (useCorrectedMeshCheckbox) {
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material, selectedType);
+      updateLEDShaders(ledsGroup, material, currentMappingType);
     }, 200);
   });
   
@@ -832,7 +832,7 @@ if (useCorrectedMeshCheckbox) {
       }
       
       // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material, selectedType);
+      updateLEDShaders(ledsGroup, material, currentMappingType);
     }, 200);
   }
 }
@@ -2049,8 +2049,9 @@ function createVRFloatingButton() {
   });
   const button = new THREE.Mesh(geom, mat);
   button.name = 'VRNextCamButton';
-  // Position the button where the test cube used to be
-  button.position.set(-16.03, 1.14, 64.33);
+  // Position the button 2 meters in front of player start (world origin)
+  // Player starts at (0, 1.6, 0) at eye level, so button at (0, 1.6, -2) for 2m in front
+  button.position.set(0, 1.6, -2); // Eye level (1.6m), 2 meters forward (-2m in Z)
   button.userData.originalColor = mat.color.clone();
   button.userData.originalEmissive = mat.emissive.clone();
 
@@ -2068,13 +2069,14 @@ function createVRFloatingButton() {
   ctx.textBaseline = 'middle';
   ctx.fillText('Next Cam', 128, 32);
   const labelTex = new THREE.CanvasTexture(labelCanvas);
-  labelTex.encoding = THREE.sRGBEncoding;
+  labelTex.colorSpace = THREE.SRGBColorSpace;
   const labelMat = new THREE.MeshBasicMaterial({ map: labelTex, transparent: true });
   const label = new THREE.Mesh(labelGeom, labelMat);
   label.position.set(0, 0, 0.012); // slightly in front
   button.add(label);
 
-  // Add to scene respecting VR offset
+  // Add button to scene in world space (not attached to player)
+  // This keeps it at a fixed position 2m in front of player start
   vrManager.addToScene(button);
 
   // Register as interactive (using reliable waitForInputManager helper)

@@ -264,29 +264,46 @@ export class VRInputManager {
   /**
    * Detect current input mode
    * Priority: controller > hand > gaze
+   * Controllers are preferred when available as they offer more precision
    * @private
    */
   detectInputMode() {
+    const previousMode = this.currentInputMode;
+    
+    // Check controllers first (preferred when available)
     if (this.controllers) {
-      // Check if controllers exist and can provide rays (even if not fully connected)
-      const leftRay = this.controllers.getControllerRay('left');
-      const rightRay = this.controllers.getControllerRay('right');
-      if (leftRay || rightRay) {
+      // Check if controllers are actually connected
+      const leftConnected = this.controllers.isControllerConnected('left');
+      const rightConnected = this.controllers.isControllerConnected('right');
+      
+      if (leftConnected || rightConnected) {
         this.currentInputMode = 'controller';
+        if (previousMode !== 'controller') {
+          console.log(`VRInputManager: Switched to controller mode (left: ${leftConnected}, right: ${rightConnected})`);
+        }
         return;
       }
     }
     
+    // Fallback to hand tracking if controllers not available
     if (this.handTracking) {
-      if (this.handTracking.isHandTracking('left') || 
-          this.handTracking.isHandTracking('right')) {
+      const leftHandTracking = this.handTracking.isHandTracking('left');
+      const rightHandTracking = this.handTracking.isHandTracking('right');
+      
+      if (leftHandTracking || rightHandTracking) {
         this.currentInputMode = 'hand';
+        if (previousMode !== 'hand') {
+          console.log(`VRInputManager: Switched to hand tracking mode (left: ${leftHandTracking}, right: ${rightHandTracking})`);
+        }
         return;
       }
     }
     
     // Fallback to gaze
     this.currentInputMode = 'gaze';
+    if (previousMode !== 'gaze') {
+      console.log('VRInputManager: Switched to gaze mode (fallback)');
+    }
   }
 
   /**
@@ -521,6 +538,42 @@ export class VRInputManager {
    */
   getCurrentInputMode() {
     return this.currentInputMode;
+  }
+
+  /**
+   * Get detailed input mode status (for debugging/verification)
+   * @returns {Object} Status object with mode and availability info
+   */
+  getInputModeStatus() {
+    const status = {
+      currentMode: this.currentInputMode,
+      controllerAvailable: false,
+      handTrackingAvailable: false,
+      gazeAvailable: true, // Always available
+      details: {}
+    };
+
+    // Check controller status
+    if (this.controllers) {
+      status.controllerAvailable = this.controllers.isControllerConnected('left') || 
+                                   this.controllers.isControllerConnected('right');
+      status.details.controllers = {
+        left: this.controllers.isControllerConnected('left'),
+        right: this.controllers.isControllerConnected('right')
+      };
+    }
+
+    // Check hand tracking status
+    if (this.handTracking) {
+      status.handTrackingAvailable = this.handTracking.isHandTracking('left') || 
+                                     this.handTracking.isHandTracking('right');
+      status.details.hands = {
+        left: this.handTracking.isHandTracking('left'),
+        right: this.handTracking.isHandTracking('right')
+      };
+    }
+
+    return status;
   }
 
   /**

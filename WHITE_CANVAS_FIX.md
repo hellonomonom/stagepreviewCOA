@@ -35,3 +35,5 @@ The app was showing a white canvas, likely due to JavaScript errors during VR fe
 
 If you still see a white canvas, check the browser console and share the error messages!
 
+
+

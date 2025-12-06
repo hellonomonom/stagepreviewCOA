@@ -7,6 +7,8 @@ import { VRControllers } from './VRControllers.js';
 import { VRHandTracking } from './VRHandTracking.js';
 import { VRInputManager } from './VRInputManager.js';
 import { VRTeleportation } from './VRTeleportation.js';
+import { VRDebugOverlay } from './VRDebugOverlay.js';
+import { VRPlayer } from './VRPlayer.js';
 
 /**
  * VRManager - Manages WebXR VR sessions
@@ -39,6 +41,8 @@ export class VRManager {
     this.teleportation = null;
     this.playbackPanel = null;
     this.settingsPanel = null;
+    this.debugOverlay = null; // Debug overlay for VR
+    this.player = null; // VR player/actor (represents the user)
     
     // External references (will be set via setter methods)
     this.playbackControlsRef = null;
@@ -129,6 +133,37 @@ export class VRManager {
       console.error('Failed to initialize VR Teleportation:', error);
       this.teleportation = null;
     }
+    
+    try {
+      // VR Player - represents the user in VR space
+      this.player = new VRPlayer(this.camera);
+      this.player.init(this.scene);
+    } catch (error) {
+      console.error('Failed to initialize VR Player:', error);
+      this.player = null;
+    }
+    
+    try {
+      // Debug overlay (only if inputManager is available, player optional)
+      if (this.inputManager) {
+        this.debugOverlay = new VRDebugOverlay(
+          this.camera,
+          this.inputManager,
+          this.controllers,
+          this.handTracking,
+          null, // Don't attach to player - use world space instead
+          this // Pass VRManager reference for VR state checking
+        );
+        // Position in world space above the test button (test button is at 0, 1.6, -2)
+        // Debug menu at 0, 2.2, -2 (0.6m above test button)
+        this.debugOverlay.setWorldSpace(true, new THREE.Vector3(0, 2.2, -2));
+        // Add to scene in world space (fixed position)
+        this.addToScene(this.debugOverlay.getGroup());
+      }
+    } catch (error) {
+      console.error('Failed to initialize VR Debug Overlay:', error);
+      this.debugOverlay = null;
+    }
   }
 
   /**
@@ -205,6 +240,11 @@ export class VRManager {
       // IMMEDIATELY set VR scene offset (synchronously, before any frames render)
       // This prevents the user from seeing the origin position
       this.setVRStartingPosition(this.vrCameraPreset);
+      
+      // Reset player to world origin when entering VR
+      if (this.player) {
+        this.player.resetToOrigin();
+      }
       
       this.isVRActive = true;
 
@@ -433,6 +473,42 @@ export class VRManager {
       } catch (error) {
         console.error('Failed to create preset indicators:', error);
       }
+      
+      try {
+        // Initialize player if not already created
+        if (!this.player) {
+          this.player = new VRPlayer(this.camera);
+          this.player.init(this.scene);
+          console.log('VR Player: Initialized (delayed)');
+        }
+      } catch (error) {
+        console.error('Failed to initialize VR Player:', error);
+      }
+      
+      try {
+        // Initialize debug overlay if not already created
+        if (!this.debugOverlay && this.inputManager) {
+          this.debugOverlay = new VRDebugOverlay(
+            this.camera,
+            this.inputManager,
+            this.controllers,
+            this.handTracking,
+            null, // Don't attach to player - use world space instead
+            this // Pass VRManager reference for VR state checking
+          );
+          // Position in world space above the test button (test button is at 0, 1.6, -2)
+          // Debug menu at 0, 2.2, -2 (0.6m above test button)
+          this.debugOverlay.setWorldSpace(true, new THREE.Vector3(0, 2.2, -2));
+          // Add to scene in world space (fixed position)
+          this.addToScene(this.debugOverlay.getGroup());
+          console.log('VR Debug Overlay: Initialized (delayed) in world space');
+          
+          // Hook up event logging
+          this.setupDebugLogging();
+        }
+      } catch (error) {
+        console.error('Failed to initialize debug overlay:', error);
+      }
     }, 500);
   }
 
@@ -510,6 +586,21 @@ export class VRManager {
       this.teleportation.dispose();
     }
     
+    // Dispose debug overlay
+    if (this.debugOverlay) {
+      this.debugOverlay.dispose();
+      if (this.debugOverlay.getGroup().parent) {
+        this.debugOverlay.getGroup().parent.remove(this.debugOverlay.getGroup());
+      }
+      this.debugOverlay = null;
+    }
+    
+    // Dispose player
+    if (this.player) {
+      this.player.dispose();
+      this.player = null;
+    }
+    
     // VR menu panels removed - no cleanup needed
   }
 
@@ -564,6 +655,23 @@ export class VRManager {
       console.error('Error updating teleportation:', error);
     }
     
+    try {
+      // Update player (tracks camera position)
+      if (this.player) {
+        this.player.update();
+      }
+    } catch (error) {
+      console.error('Error updating VR player:', error);
+    }
+    
+    try {
+      // Update debug overlay
+      if (this.debugOverlay) {
+        this.debugOverlay.update(this.camera);
+      }
+    } catch (error) {
+      console.error('Error updating debug overlay:', error);
+    }
     
     // VR menu panels removed - no longer updating
   }

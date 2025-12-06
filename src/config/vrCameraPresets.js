@@ -5,13 +5,13 @@
 
 export const vrCameraPresets = {
   /**
-   * Default VR launch position - optimized for stage viewing
+   * Default VR launch position - starts at world origin
    */
   default: {
-    position: { x: -16.43, y: 1.11, z: 65.9 },
-    rotation: { x: 1.48, y: -14.57, z: 0.37 },
-    target: { x: 0.67, y: 2.81, z: 0.15 },
-    label: 'Default View'
+    position: { x: 0, y: 1.6, z: 0 }, // World origin at eye level (1.6m)
+    rotation: { x: 0, y: 0, z: 0 },
+    target: { x: 0, y: 1.6, z: -1 }, // Looking forward
+    label: 'Default View (Origin)'
   },
   
   /**

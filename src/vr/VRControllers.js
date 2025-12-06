@@ -220,18 +220,30 @@ export class VRControllers {
   handleInputSourcesChange(event) {
     // Handle added input sources
     event.added.forEach((inputSource) => {
-      if (inputSource.targetRayMode === 'tracked-pointer') {
+      // Only treat as controller if it has a gamepad (not hand tracking)
+      // Controllers have gamepad property, hand tracking has hand property
+      const isGamepadConnected = inputSource.gamepad ? inputSource.gamepad.connected : false;
+      
+      if (inputSource.targetRayMode === 'tracked-pointer' && 
+          inputSource.gamepad && 
+          !inputSource.hand &&
+          isGamepadConnected) {
         this.checkInputSource(inputSource);
       }
     });
 
     // Handle removed input sources
     event.removed.forEach((inputSource) => {
+      // Check if this was a controller we were tracking
+      // Don't need strict checks here, just if it matches handedness of a connected controller
       if (inputSource.targetRayMode === 'tracked-pointer') {
         const hand = inputSource.handedness;
-        if (hand === 'left' || hand === 'right') {
-          this.isConnected[hand] = false;
-          this.triggerControllerDisconnected(inputSource, hand);
+        if ((hand === 'left' || hand === 'right') && this.isConnected[hand]) {
+          // Verify it was actually the controller (has gamepad)
+          if (inputSource.gamepad && !inputSource.hand) {
+            this.isConnected[hand] = false;
+            this.triggerControllerDisconnected(inputSource, hand);
+          }
         }
       }
     });
@@ -245,7 +257,15 @@ export class VRControllers {
     if (!xrSession || !xrSession.inputSources) return;
 
     xrSession.inputSources.forEach((inputSource) => {
-      if (inputSource.targetRayMode === 'tracked-pointer') {
+      // Only treat as controller if it has a gamepad (not hand tracking)
+      // Controllers have gamepad property, hand tracking has hand property
+      // Also ensure gamepad is connected if property exists
+      const isGamepadConnected = inputSource.gamepad ? inputSource.gamepad.connected : false;
+      
+      if (inputSource.targetRayMode === 'tracked-pointer' && 
+          inputSource.gamepad && 
+          !inputSource.hand &&
+          isGamepadConnected) {
         this.checkInputSource(inputSource);
       }
     });
