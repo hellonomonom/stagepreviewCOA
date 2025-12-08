@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes } from './src/config/meshPaths.js';
 import { shaderConfigs } from './src/config/shaderConfig.js';
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from './src/config/cameraPresets.js';
+import { vrCameraPresets, DEFAULT_VR_CAMERA_PRESET } from './src/config/vrCameraPresets.js';
 import { createShaderMaterials, createTextureShaderMaterial, createLEDShaderMaterial, updateLEDShaders, applyShaderToGroup, updateCameraPositionInShaders, loadMaskTexture } from './src/core/ShaderManager.js';
 import { getShaderType } from './src/utils/shaderUtils.js';
 import { getElement } from './src/utils/domUtils.js';
@@ -2002,6 +2003,95 @@ function initializeVRManager() {
     }, 1000);
     
     // Create test interactive object for VR
+    
+    // Setup VR preset selector in camera tab
+    setupVRPresetSelector();
+  }
+}
+
+/**
+ * Setup VR preset selector in camera tab
+ */
+function setupVRPresetSelector() {
+  const vrPresetSelect = document.getElementById('vrPresetSelect');
+  const cycleVRPresetBtn = document.getElementById('cycleVRPresetBtn');
+  
+  if (!vrPresetSelect || !cycleVRPresetBtn) {
+    console.warn('VR preset selector elements not found');
+    return;
+  }
+  
+  // Populate dropdown with presets
+  Object.entries(vrCameraPresets).forEach(([key, preset]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = preset.label || key;
+    if (key === DEFAULT_VR_CAMERA_PRESET) {
+      option.selected = true;
+    }
+    vrPresetSelect.appendChild(option);
+  });
+  
+  // Handle preset selection from dropdown
+  vrPresetSelect.addEventListener('change', (e) => {
+    const presetName = e.target.value;
+    if (presetName && vrManager) {
+      if (vrManager.getIsVRActive()) {
+        // If in VR, teleport to preset
+        vrManager.teleportToPreset(presetName);
+      } else {
+        // If not in VR, just set the preset (will be used when entering VR)
+        vrManager.setVRCameraPreset(presetName);
+      }
+    }
+  });
+  
+  // Handle cycle button
+  let currentPresetIndex = 0;
+  const presetKeys = Object.keys(vrCameraPresets);
+  
+  // Find current preset index
+  const currentPreset = vrManager ? vrManager.vrCameraPreset : DEFAULT_VR_CAMERA_PRESET;
+  currentPresetIndex = presetKeys.indexOf(currentPreset);
+  if (currentPresetIndex === -1) currentPresetIndex = 0;
+  
+  cycleVRPresetBtn.addEventListener('click', () => {
+    // Cycle to next preset
+    currentPresetIndex = (currentPresetIndex + 1) % presetKeys.length;
+    const nextPreset = presetKeys[currentPresetIndex];
+    
+    // Update dropdown
+    vrPresetSelect.value = nextPreset;
+    
+    // Apply preset
+    if (vrManager) {
+      if (vrManager.getIsVRActive()) {
+        // If in VR, teleport to preset
+        vrManager.teleportToPreset(nextPreset);
+      } else {
+        // If not in VR, just set the preset
+        vrManager.setVRCameraPreset(nextPreset);
+      }
+    }
+  });
+  
+  // Update dropdown when VR preset changes (from VR input)
+  if (vrManager && vrManager.presetNavigation) {
+    // Listen for preset changes (if available)
+    const originalTeleport = vrManager.presetNavigation.teleportToPreset;
+    if (originalTeleport) {
+      vrManager.presetNavigation.teleportToPreset = async function(presetName, smooth) {
+        const result = await originalTeleport.call(this, presetName, smooth);
+        // Update dropdown to reflect current preset
+        if (vrPresetSelect) {
+          vrPresetSelect.value = presetName;
+          // Update current index
+          currentPresetIndex = presetKeys.indexOf(presetName);
+          if (currentPresetIndex === -1) currentPresetIndex = 0;
+        }
+        return result;
+      };
+    }
   }
 }
 

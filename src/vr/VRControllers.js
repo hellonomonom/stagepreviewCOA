@@ -64,8 +64,9 @@ export class VRControllers {
 
     // Create controller spaces immediately (even if not connected yet)
     // This ensures rays are visible from the start
-    this.leftController = this.renderer.xr.getController(0);
-    this.rightController = this.renderer.xr.getController(1);
+    // Note: Three.js getController indices may not match handedness, so we swap them
+    this.leftController = this.renderer.xr.getController(1);
+    this.rightController = this.renderer.xr.getController(0);
 
     // Add controllers to scene and set them up
     // Check if they are already in the scene (re-use existing)

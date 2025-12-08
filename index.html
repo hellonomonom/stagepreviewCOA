@@ -245,6 +245,15 @@
                     <!-- Camera Tab Content -->
                     <div class="tab-panel" id="cameraTabPanel">
                         <div class="control-group">
+                            <label class="label">VR Camera Presets</label>
+                            <div style="display: flex; gap: var(--space-sm); align-items: center;">
+                                <select id="vrPresetSelect" class="dropdown" style="flex: 1;">
+                                    <option value="">Select VR Preset...</option>
+                                </select>
+                                <button class="btn btn-sm" id="cycleVRPresetBtn" title="Cycle to next VR preset">Next</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
                             <div class="camera-position-buttons">
                                 <button class="camera-position-btn" id="cameraPos1">Home</button>
                                 <button class="camera-position-btn" id="cameraPos2">Crowd</button>

@@ -211,8 +211,9 @@ export class VRHandTracking {
       
       try {
         // Try to get hand space from Three.js renderer
-        // getHand(index) where index 0 = left, 1 = right
-        const handIndex = handedness === 'left' ? 0 : 1;
+        // Note: Three.js getHand indices may not match handedness, so we swap them
+        // getHand(index) where index 0 = right, 1 = left (swapped)
+        const handIndex = handedness === 'left' ? 1 : 0;
         let handSpace = this.renderer.xr.getHand(handIndex);
         
         // If getHand doesn't work, try to use the input source's hand directly
