@@ -737,22 +737,33 @@ export class MediaManager {
     console.log('Available video devices:', videoDevices.map(d => `${d.label} (${d.deviceId})`));
     
     // Look for a virtual camera device suitable for NDI/OBS
-    // Common names: "NDI Video", "NDI Webcam Input", "OBS Virtual Camera", etc.
-    const virtualCamDevice = videoDevices.find(device => {
+    // Prioritize OBS Virtual Camera over other virtual cameras
+    // Common names: "OBS Virtual Camera", "NDI Video", "NDI Webcam Input", etc.
+    let virtualCamDevice = videoDevices.find(device => {
       const label = (device.label || '').toLowerCase();
-      return (
-        label.includes('ndi') ||
-        label.includes('webcam input') ||
-        label.includes('obs') ||
-        label.includes('virtual camera')
-      );
+      // Prioritize OBS Virtual Camera
+      return label.includes('obs') && (label.includes('virtual') || label.includes('camera'));
     });
+    
+    // If OBS Virtual Camera not found, look for any virtual camera
+    if (!virtualCamDevice) {
+      virtualCamDevice = videoDevices.find(device => {
+        const label = (device.label || '').toLowerCase();
+        return (
+          label.includes('ndi') ||
+          label.includes('webcam input') ||
+          label.includes('obs') ||
+          label.includes('virtual camera')
+        );
+      });
+    }
     
     if (!virtualCamDevice) {
       throw new Error('No NDI/OBS virtual camera found. Make sure OBS Virtual Camera or NDI Webcam Input is running and a source is selected.');
     }
     
-    console.log('Using virtual camera device for NDI:', virtualCamDevice.label);
+    const isOBSVirtualCamera = (virtualCamDevice.label || '').toLowerCase().includes('obs');
+    console.log(`Using ${isOBSVirtualCamera ? 'OBS Virtual Camera' : 'virtual camera'} device for NDI:`, virtualCamDevice.label);
     
     // Store the camera device name for display
     this.currentNDICameraName = virtualCamDevice.label;

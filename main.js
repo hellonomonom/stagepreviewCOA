@@ -20,6 +20,26 @@ import { FileInfoManager } from './src/features/FileInfoManager.js';
 import { OverlayManager } from './src/features/OverlayManager.js';
 import { SceneControls } from './src/features/SceneControls.js';
 import { VRManager } from './src/vr/VRManager.js';
+import { LoadingManager } from './src/core/LoadingManager.js';
+import { InitializationManager } from './src/core/InitializationManager.js';
+
+// Initialize loading and initialization managers
+const loadingManager = new LoadingManager();
+const initManager = new InitializationManager(loadingManager);
+
+// Register loading states
+loadingManager.register('dom', []);
+loadingManager.register('maskTexture', []);
+loadingManager.register('ledMeshes', []);
+loadingManager.register('stageMeshes', []);
+loadingManager.register('floorMesh', ['stageMeshes']);
+loadingManager.register('crowdMeshes', ['floorMesh']);
+loadingManager.register('ui', ['dom']);
+loadingManager.register('playbackControls', ['ui', 'dom']);
+loadingManager.register('mediaManager', ['playbackControls']);
+loadingManager.register('cameraControls', ['ui', 'dom']);
+loadingManager.register('vrManager', ['ui', 'dom']);
+loadingManager.register('shaderControls', ['stageMeshes', 'ledMeshes']);
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -135,10 +155,11 @@ meshLoader.setCallbacks({
       console.log('Parented DJ artist mesh to liftable stage');
     }
   },
-  onFloorLoaded: (mesh) => {
+  onFloorLoaded: async (mesh) => {
     floorMesh = mesh;
     vrFloorMesh = mesh;
     console.log('Floor mesh loaded');
+    loadingManager.setLoaded('floorMesh');
     
     // Set floor mesh reference in VRManager for teleportation
     if (vrManager) {
@@ -154,14 +175,26 @@ meshLoader.setCallbacks({
     } else {
       crowdSpawner.setFloorMesh(floorMesh);
     }
-    // Spawn crowd cubes on the floor after a short delay
-    setTimeout(() => {
-      if (crowdSpawner) {
-        const slider = document.getElementById('crowdInstanceCountSlider');
-        const count = slider ? parseInt(slider.value) || 4000 : 4000;
-        crowdSpawner.spawnCrowd(count);
-      }
-    }, 100);
+    
+    // Try to wait for UI, but don't fail if it's not ready yet
+    // Use a longer timeout and fallback to default value
+    try {
+      await loadingManager.waitFor('ui', 15000);
+    } catch (error) {
+      console.warn('UI not ready yet, using default crowd count:', error);
+    }
+    
+    // Spawn crowd with slider value or default
+    try {
+      const slider = document.getElementById('crowdInstanceCountSlider');
+      const count = slider ? parseInt(slider.value) || 4000 : 4000;
+      await crowdSpawner.spawnCrowd(count);
+      loadingManager.setLoaded('crowdMeshes');
+    } catch (error) {
+      console.warn('Failed to spawn crowd:', error);
+      // Still mark as loaded even if crowd spawning fails
+      loadingManager.setLoaded('crowdMeshes');
+    }
   },
   onArtistsLoaded: (mesh) => {
     artistsMeshes.push({
@@ -195,8 +228,10 @@ meshLoader.setCallbacks({
 // Load mask texture on initialization
 loadMaskTexture().then(() => {
   console.log('Mask texture loaded successfully');
+  loadingManager.setLoaded('maskTexture');
 }).catch((error) => {
   console.warn('Failed to load mask texture:', error);
+  loadingManager.setError('maskTexture', error);
 });
 
 // Initialize LED Mapping
@@ -240,36 +275,65 @@ function loadLEDMeshes(mappingType, useCorrected = false) {
   srGarageMesh = garages.sr;
 }
 
+// Track mesh loading
+let stageMeshesLoaded = 0;
+const totalStageMeshes = meshFiles.stage.length;
+let ledMeshesLoaded = false;
+
+// Function to check if all stage meshes are loaded
+function checkStageMeshesLoaded() {
+  stageMeshesLoaded++;
+  if (stageMeshesLoaded >= totalStageMeshes) {
+    loadingManager.setLoaded('stageMeshes');
+  }
+}
+
+// Function to check if LED meshes are loaded
+function checkLEDMeshesLoaded() {
+  if (!ledMeshesLoaded) {
+    ledMeshesLoaded = true;
+    loadingManager.setLoaded('ledMeshes');
+    
+    // Hide front screen by default for Festival Mapping, show for Front Projection types
+    // Set mesh visibility immediately (doesn't require UI)
+    if (ledFrontMesh) {
+      if (currentMappingType === 'festival') {
+        ledFrontMesh.visible = false;
+      } else if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
+        ledFrontMesh.visible = true;
+      }
+    }
+    
+    // Update checkbox when UI is ready (non-blocking)
+    loadingManager.waitFor('ui', 15000).then(() => {
+      const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+      if (ledFrontMesh && hideLedFrontCheckbox) {
+        if (currentMappingType === 'festival') {
+          hideLedFrontCheckbox.checked = true;
+        } else if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
+          hideLedFrontCheckbox.checked = false;
+        }
+      }
+    }).catch(err => {
+      // UI not ready yet, but mesh visibility is already set, so this is fine
+      console.debug('UI not ready for LED front checkbox update (mesh visibility already set):', err);
+    });
+  }
+}
+
 // Load initial LED meshes (Front Projection by default)
 // Note: useCorrectedMeshCheckbox will be defined later, so we default to false
 loadLEDMeshes(currentMappingType, false);
-
-// Hide front screen by default for Festival Mapping, show for Front Projection types
-setTimeout(() => {
-  const hideLedFrontCheckbox = document.getElementById('hideLedFront');
-  if (ledFrontMesh) {
-    if (currentMappingType === 'festival') {
-      ledFrontMesh.visible = false;
-      if (hideLedFrontCheckbox) {
-        hideLedFrontCheckbox.checked = true;
-      }
-    } else if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
-      ledFrontMesh.visible = true;
-      if (hideLedFrontCheckbox) {
-        hideLedFrontCheckbox.checked = false;
-      }
-    }
-  }
-}, 100);
+// Mark LED meshes as loaded after a short delay (they load asynchronously)
+// This will be improved when MeshLoader returns promises
+setTimeout(checkLEDMeshesLoaded, 500);
 
 // Load all Stage meshes
-let stageMeshesLoaded = 0;
-const totalStageMeshes = meshFiles.stage.length;
-
 meshFiles.stage.forEach(path => {
   loadMesh(path, stageGroup, true);
   // Track when all stage meshes are loaded
-  // Note: loadMesh is async, so we'll check after a delay
+  // This will be improved when MeshLoader returns promises
+  setTimeout(checkStageMeshesLoaded, 100);
 });
 
 
@@ -603,72 +667,130 @@ function syncControlsToShaderValues(shaderType, material) {
 // Initialize Shader Controls
 const shaderControls = new ShaderControls(shaderMaterials, materialReferences, updateShaderUniforms, syncControlsToShaderValues);
 
-// Initialize shader controls after meshes are loaded (delay to ensure materials are ready)
-setTimeout(() => {
+// Initialize shader controls after meshes are loaded
+initManager.register('shaderControls', async () => {
+  await loadingManager.waitForAll(['stageMeshes', 'ledMeshes'], 10000);
   shaderControls.init();
-}, 2000);
+  loadingManager.setLoaded('shaderControls');
+}, [], ['stageMeshes', 'ledMeshes']);
 
 // NDI stream status
-const ndiStreamStatus = document.getElementById('ndiStreamStatus');
+let ndiStreamStatus = null;
 let currentNdiStreamName = null;
 let pendingNdiFileInfo = null;
 
-// Source type dropdown
-const sourceTypeSelect = document.getElementById('sourceTypeSelect');
-const textureInputGroup = document.getElementById('textureInputGroup');
-const ndiStreamGroup = document.getElementById('ndiStreamGroup');
+// Source type dropdown (will be initialized when UI is ready)
+let sourceTypeSelect = null;
+let textureInputGroup = null;
+let ndiStreamGroup = null;
 
-// Handle source type change
-sourceTypeSelect.addEventListener('change', (e) => {
-  const selectedType = e.target.value;
+// Initialize NDI UI components
+function initializeNDIUI() {
+  // Get DOM elements
+  ndiStreamStatus = document.getElementById('ndiStreamStatus');
+  sourceTypeSelect = document.getElementById('sourceTypeSelect');
+  textureInputGroup = document.getElementById('textureInputGroup');
+  ndiStreamGroup = document.getElementById('ndiStreamGroup');
   
-  if (selectedType === 'texture') {
-    // Show texture input, hide NDI controls
-    textureInputGroup.style.display = 'block';
-    textureInputGroup.classList.remove('hidden');
-    ndiStreamGroup.style.display = 'none';
-    ndiStreamGroup.classList.add('hidden');
+  if (!sourceTypeSelect || !textureInputGroup || !ndiStreamGroup) {
+    return false; // Elements not ready yet
+  }
+  
+  // Handle source type change
+  sourceTypeSelect.addEventListener('change', (e) => {
+    const selectedType = e.target.value;
     
-    // Restore last selected video asset or load default
-    if (videoAssetSelect && lastSelectedVideoAsset) {
-      videoAssetSelect.value = lastSelectedVideoAsset;
-      // Trigger the change event to load the video
-      const event = new Event('change', { bubbles: true });
-      videoAssetSelect.dispatchEvent(event);
-    } else if (videoAssetSelect && !lastSelectedVideoAsset) {
-      // Load default video if no previous selection
-      const defaultPath = DEFAULT_VIDEO_PATH;
-      videoAssetSelect.value = defaultPath;
-      loadVideoFromPath(defaultPath);
+    if (selectedType === 'texture') {
+      // Show texture input, hide NDI controls
+      textureInputGroup.style.display = 'block';
+      textureInputGroup.classList.remove('hidden');
+      ndiStreamGroup.style.display = 'none';
+      ndiStreamGroup.classList.add('hidden');
+      
+      // Restore last selected video asset or load default
+      if (videoAssetSelect && lastSelectedVideoAsset) {
+        videoAssetSelect.value = lastSelectedVideoAsset;
+        // Trigger the change event to load the video
+        const event = new Event('change', { bubbles: true });
+        videoAssetSelect.dispatchEvent(event);
+      } else if (videoAssetSelect && !lastSelectedVideoAsset) {
+        // Load default video if no previous selection
+        const defaultPath = DEFAULT_VIDEO_PATH;
+        videoAssetSelect.value = defaultPath;
+        loadVideoFromPath(defaultPath);
+      }
+    } else if (selectedType === 'ndi') {
+      // Show NDI controls, hide texture input
+      textureInputGroup.style.display = 'none';
+      textureInputGroup.classList.add('hidden');
+      ndiStreamGroup.style.display = 'block';
+      ndiStreamGroup.classList.remove('hidden');
+      // Try to load OBS Virtual Camera directly (bypasses NDI discovery)
+      console.log('Source type changed to NDI, loading OBS Virtual Camera...');
+      loadOBSVirtualCamera().catch(error => {
+        console.warn('OBS Virtual Camera not available, trying NDI discovery:', error.message);
+        // Fallback to NDI discovery if OBS Virtual Camera not found
+        discoverNDIStreams().catch(err => {
+          console.error('Error during NDI discovery:', err);
+          setNdiStatus('No OBS Virtual Camera or NDI streams found');
+        });
+      });
     }
-  } else if (selectedType === 'ndi') {
+  });
+  
+  // Initialize UI state based on default selection
+  const initialSourceType = sourceTypeSelect.value;
+  if (initialSourceType === 'ndi') {
     // Show NDI controls, hide texture input
     textureInputGroup.style.display = 'none';
     textureInputGroup.classList.add('hidden');
     ndiStreamGroup.style.display = 'block';
     ndiStreamGroup.classList.remove('hidden');
-    // Auto-discover NDI streams when switching to NDI mode
-    discoverNDIStreams();
+    // Try to load OBS Virtual Camera directly (bypasses NDI discovery)
+    console.log('Initial source type is NDI, loading OBS Virtual Camera...');
+    loadOBSVirtualCamera().catch(error => {
+      console.warn('OBS Virtual Camera not available, trying NDI discovery:', error.message);
+      // Fallback to NDI discovery if OBS Virtual Camera not found
+      discoverNDIStreams().catch(err => {
+        console.error('Error during initial NDI discovery:', err);
+        setNdiStatus('No OBS Virtual Camera or NDI streams found');
+      });
+    });
+  } else {
+    // Show texture input, hide NDI controls
+    textureInputGroup.style.display = 'block';
+    textureInputGroup.classList.remove('hidden');
+    ndiStreamGroup.style.display = 'none';
+    ndiStreamGroup.classList.add('hidden');
+  }
+  
+  return true; // Successfully initialized
+}
+
+// Try to initialize NDI UI when UI is ready
+function tryInitializeNDIUI() {
+  if (initializeNDIUI()) {
+    return true;
+  }
+  // If not ready, wait a bit and try again
+  setTimeout(() => {
+    if (!initializeNDIUI()) {
+      // Try one more time after a longer delay
+      setTimeout(tryInitializeNDIUI, 500);
+    }
+  }, 100);
+  return false;
+}
+
+// Start trying to initialize NDI UI
+tryInitializeNDIUI();
+
+// Also try when UI loading state is set
+loadingManager.addListener('ui', () => {
+  if (loadingManager.isLoaded('ui')) {
+    tryInitializeNDIUI();
   }
 });
-
-// Initialize UI state based on default selection
-const initialSourceType = sourceTypeSelect.value;
-if (initialSourceType === 'ndi') {
-  // Show NDI controls, hide texture input
-  textureInputGroup.style.display = 'none';
-  textureInputGroup.classList.add('hidden');
-  ndiStreamGroup.style.display = 'block';
-  ndiStreamGroup.classList.remove('hidden');
-  // Auto-discover NDI streams on page load
-  discoverNDIStreams();
-} else {
-  // Show texture input, hide NDI controls
-  textureInputGroup.style.display = 'block';
-  textureInputGroup.classList.remove('hidden');
-  ndiStreamGroup.style.display = 'none';
-  ndiStreamGroup.classList.add('hidden');
-}
 
 // Mapping type dropdown change handler
 const mappingTypeSelect = document.getElementById('mappingTypeSelect');
@@ -839,8 +961,13 @@ if (useCorrectedMeshCheckbox) {
 }
 
 // Initialize checkbox visibility on page load
-// Use setTimeout to ensure DOM is ready
-setTimeout(() => {
+// This runs immediately to set up UI as early as possible
+function initializeUI() {
+  // Check if DOM is ready
+  const isDOMReady = document.readyState !== 'loading';
+  
+  // Initialize all UI elements that are available
+  const correctedMeshGroup = document.getElementById('correctedMeshGroup');
   if (correctedMeshGroup) {
     // Hide for FarCam options (A-E) and festival, show only for frontProjection types
     if (currentMappingType === 'frontProjection' || currentMappingType === 'frontProjectionPerspective') {
@@ -849,7 +976,58 @@ setTimeout(() => {
       correctedMeshGroup.style.display = 'none';
     }
   }
-}, 0);
+  
+  // Mark UI as loaded if DOM is ready and we found key elements
+  // Key elements: settingsPanel, crowdInstanceCountSlider, sourceTypeSelect, etc.
+  const keyElementsExist = !!(
+    document.getElementById('settingsPanel') &&
+    document.getElementById('crowdInstanceCountSlider') &&
+    document.getElementById('sourceTypeSelect')
+  );
+  
+  if (isDOMReady && keyElementsExist) {
+    loadingManager.setLoaded('ui');
+    if (!loadingManager.isLoaded('dom')) {
+      loadingManager.setLoaded('dom');
+    }
+    // Try to initialize NDI UI now that elements are available
+    tryInitializeNDIUI();
+    return true;
+  }
+  
+  return false;
+}
+
+// Try to initialize UI immediately
+if (!initializeUI()) {
+  // If not ready, wait for DOMContentLoaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeUI();
+    }, { once: true });
+  } else {
+    // DOM is ready but elements might not be there yet, try again after a short delay
+    setTimeout(() => {
+      if (!loadingManager.isLoaded('ui')) {
+        initializeUI();
+      }
+    }, 100);
+  }
+}
+
+// Also register it in initManager for dependency tracking
+initManager.register('ui', async () => {
+  // If already initialized, just return
+  if (loadingManager.isLoaded('ui')) {
+    return;
+  }
+  // Otherwise, try to initialize
+  if (!initializeUI()) {
+    // Wait a bit more and try again
+    await new Promise(resolve => setTimeout(resolve, 200));
+    initializeUI();
+  }
+}, []);
 
 // Texture scale slider handler
 const textureScaleSlider = document.getElementById('textureScaleSlider');
@@ -969,7 +1147,14 @@ if (textureOffsetVResetBtn && textureOffsetVSlider && textureOffsetVValue) {
 }
 
 function setNdiStatus(message, type = 'info') {
-  if (!ndiStreamStatus) return;
+  // Try to get element if not already cached
+  if (!ndiStreamStatus) {
+    ndiStreamStatus = document.getElementById('ndiStreamStatus');
+  }
+  if (!ndiStreamStatus) {
+    // Silently return if element not found (not critical, just UI feedback)
+    return;
+  }
   ndiStreamStatus.textContent = message;
   ndiStreamStatus.dataset.state = type;
 }
@@ -981,23 +1166,37 @@ function updateNdiFileInfo(streamName) {
   }
 }
 
+// Track if discovery is in progress to prevent duplicate calls
+let ndiDiscoveryInProgress = false;
+
 // Function to fetch and display available NDI streams
 async function discoverNDIStreams() {
+  // Prevent multiple simultaneous discovery calls
+  if (ndiDiscoveryInProgress) {
+    return;
+  }
+  
+  ndiDiscoveryInProgress = true;
   const discoveryUrl = `http://localhost:8080/ndi/discover?t=${Date.now()}`;
   setNdiStatus('Discovering NDI streams...');
   currentNdiStreamName = null;
   
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+  
   try {
-    console.log('Attempting to discover NDI streams from:', discoveryUrl);
     const response = await fetch(discoveryUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
-      cache: 'no-cache'
+      cache: 'no-cache',
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Discovery failed:', response.status, errorText);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
@@ -1005,23 +1204,72 @@ async function discoverNDIStreams() {
     console.log('Received streams data:', streams);
     
     if (Array.isArray(streams) && streams.length > 0) {
-      const firstStream = streams[0];
-      const firstStreamName = typeof firstStream === 'string'
-        ? firstStream
-        : (firstStream.name || firstStream.sourceName || firstStream.ndi_name || 'Unknown');
-      currentNdiStreamName = firstStreamName;
-      setNdiStatus(`NDI Stream: ${firstStreamName}`);
-      updateNdiFileInfo(firstStreamName);
-      loadNDIStream(firstStreamName);
+      // Prioritize OBS Virtual Camera streams
+      // Look for streams that might be from OBS (common OBS NDI source names)
+      const obsStreamPatterns = [
+        /obs/i,
+        /virtual.*camera/i,
+        /obs.*studio/i,
+        /obs.*virtual/i
+      ];
+      
+      let selectedStream = null;
+      let selectedStreamName = null;
+      
+      // First, try to find an OBS-related stream
+      for (const stream of streams) {
+        const streamName = typeof stream === 'string'
+          ? stream
+          : (stream.name || stream.sourceName || stream.ndi_name || '');
+        
+        // Check if this stream matches OBS patterns
+        const isOBSStream = obsStreamPatterns.some(pattern => pattern.test(streamName));
+        
+        if (isOBSStream) {
+          selectedStream = stream;
+          selectedStreamName = streamName;
+          console.log('Found OBS Virtual Camera stream:', streamName);
+          break;
+        }
+      }
+      
+      // If no OBS stream found, use the first stream
+      if (!selectedStream) {
+        selectedStream = streams[0];
+        selectedStreamName = typeof selectedStream === 'string'
+          ? selectedStream
+          : (selectedStream.name || selectedStream.sourceName || selectedStream.ndi_name || 'Unknown');
+        console.log('No OBS stream found, using first available stream:', selectedStreamName);
+      }
+      
+      currentNdiStreamName = selectedStreamName;
+      setNdiStatus(`NDI Stream: ${selectedStreamName}`);
+      updateNdiFileInfo(selectedStreamName);
+      // Load NDI stream (will wait for MediaManager if needed)
+      loadNDIStream(selectedStreamName).catch(error => {
+        console.error('Failed to load NDI stream:', error);
+        setNdiStatus(`Error loading stream: ${error.message}`);
+      });
     } else {
       setNdiStatus('No NDI streams found');
       updateNdiFileInfo(null);
     }
   } catch (error) {
-    console.error('Error discovering NDI streams:', error);
-    setNdiStatus('Error discovering NDI streams');
+    // Handle connection refused and other network errors gracefully
+    if (error.name === 'AbortError' || error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+      // Backend server is not running - this is expected in some cases
+      setNdiStatus('Backend server not available');
+      console.debug('NDI backend server not available at:', discoveryUrl);
+      console.debug('Note: Start the backend server (server.js) to enable NDI stream discovery');
+    } else {
+      // Other errors - log but don't spam
+      console.warn('Error discovering NDI streams:', error.message);
+      setNdiStatus('Error discovering NDI streams');
+    }
     updateNdiFileInfo(null);
-    console.log('Note: NDI discovery requires a backend service at:', discoveryUrl);
+  } finally {
+    clearTimeout(timeoutId);
+    ndiDiscoveryInProgress = false;
   }
 }
 
@@ -1449,12 +1697,20 @@ function initializeMediaManager() {
   if (mediaManager) {
     mediaManager.overlayManager = overlayManager;
   }
+  
+  loadingManager.setLoaded('mediaManager');
 }
 
-// Initialize playback controls when DOM is ready
-function initializePlaybackControls() {
-  // Initialize MediaManager first
+// Register MediaManager initialization (must happen before playbackControls)
+initManager.register('mediaManager', async () => {
+  await loadingManager.waitFor('ui', 5000);
   initializeMediaManager();
+}, [], ['ui']);
+
+// Initialize playback controls when DOM is ready
+initManager.register('playbackControls', async () => {
+  await loadingManager.waitFor('ui', 5000);
+  await loadingManager.waitFor('mediaManager', 10000);
   
   // Get initial video element from MediaManager (will be null initially)
   const initialVideoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
@@ -1495,13 +1751,9 @@ function initializePlaybackControls() {
     panelManager.registerPanel(fileInfoTop, 'fileInfo');
     fileInfoTop.style.cursor = 'grab';
   }
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializePlaybackControls);
-} else {
-  initializePlaybackControls();
-}
+  
+  loadingManager.setLoaded('playbackControls');
+}, ['mediaManager'], ['ui', 'mediaManager']);
 
 // Update button states based on video availability (wrapper for compatibility)
 function updatePlaybackButtons() {
@@ -1523,12 +1775,60 @@ function updateMuteButton() {
   }
 }
 
-// Function to load NDI stream as texture using WebSocket + Canvas
-function loadNDIStream(streamName) {
+// Function to load OBS Virtual Camera directly (bypasses NDI discovery)
+async function loadOBSVirtualCamera() {
+  // Wait for MediaManager to be initialized
+  try {
+    await loadingManager.waitFor('mediaManager', 10000);
+  } catch (error) {
+    console.error('MediaManager not initialized, cannot load OBS Virtual Camera:', error);
+    setNdiStatus('Error: MediaManager not ready');
+    throw error;
+  }
+  
   if (!mediaManager) {
-    console.error('MediaManager not initialized');
+    console.error('MediaManager not available after waiting');
+    setNdiStatus('Error: MediaManager not available');
+    throw new Error('MediaManager not available');
+  }
+  
+  console.log('Loading OBS Virtual Camera directly...');
+  setNdiStatus('Connecting to OBS Virtual Camera...');
+  
+  // Call loadNDIStream - it will try loadNDIStreamViaCamera first
+  // which looks for OBS Virtual Camera in browser devices
+  // The streamName parameter is mostly ignored when using camera method
+  try {
+    await mediaManager.loadNDIStream('OBS Virtual Camera');
+    setNdiStatus('OBS Virtual Camera connected');
+    currentNdiStreamName = 'OBS Virtual Camera';
+    updateNdiFileInfo('OBS Virtual Camera');
+    console.log('Successfully loaded OBS Virtual Camera');
+  } catch (error) {
+    console.error('Failed to load OBS Virtual Camera:', error);
+    setNdiStatus('OBS Virtual Camera not found: ' + error.message);
+    throw error;
+  }
+}
+
+// Function to load NDI stream as texture using WebSocket + Canvas
+async function loadNDIStream(streamName) {
+  // Wait for MediaManager to be initialized
+  try {
+    await loadingManager.waitFor('mediaManager', 10000);
+  } catch (error) {
+    console.error('MediaManager not initialized, cannot load NDI stream:', error);
+    setNdiStatus('Error: MediaManager not ready');
     return;
   }
+  
+  if (!mediaManager) {
+    console.error('MediaManager not available after waiting');
+    setNdiStatus('Error: MediaManager not available');
+    return;
+  }
+  
+  console.log('Loading NDI stream:', streamName);
   mediaManager.loadNDIStream(streamName);
 }
 
@@ -1926,19 +2226,19 @@ function initializeCameraControls() {
   }
 }
 
-// Initialize camera controls when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeCameraControls);
-} else {
+// Register camera controls initialization
+initManager.register('cameraControls', async () => {
+  await loadingManager.waitFor('ui', 5000);
   initializeCameraControls();
-}
+  loadingManager.setLoaded('cameraControls');
+}, [], ['ui']);
 
 // VR Manager
 // ============================================
 // Initialize VR manager (will be initialized after camera controls)
 // Note: vrManager is declared at the top of the file
 
-function initializeVRManager() {
+async function initializeVRManager() {
   try {
     vrManager = new VRManager(renderer, scene, camera, controls);
   } catch (error) {
@@ -1947,32 +2247,33 @@ function initializeVRManager() {
     return;
   }
   
+  // Wait a bit for WebXR initialization
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
   // Check VR availability and show button if supported
-  setTimeout(() => {
-    if (vrManager && vrManager.isVRAvailable()) {
-      const vrButton = document.getElementById('vrToggleButton');
-      if (vrButton) {
-        vrButton.style.display = 'flex';
-        
-        // Setup VR button click handler
-        vrButton.addEventListener('click', async () => {
-          if (!vrManager.getIsVRActive()) {
-            // Enter VR
-            const success = await vrManager.enterVR();
-            if (success) {
-              vrButton.querySelector('.vr-button-text').textContent = 'Exit VR';
-              vrButton.classList.add('vr-active');
-            }
-          } else {
-            // Exit VR
-            vrManager.exitVR();
-            vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
-            vrButton.classList.remove('vr-active');
+  if (vrManager && vrManager.isVRAvailable()) {
+    const vrButton = document.getElementById('vrToggleButton');
+    if (vrButton) {
+      vrButton.style.display = 'flex';
+      
+      // Setup VR button click handler
+      vrButton.addEventListener('click', async () => {
+        if (!vrManager.getIsVRActive()) {
+          // Enter VR
+          const success = await vrManager.enterVR();
+          if (success) {
+            vrButton.querySelector('.vr-button-text').textContent = 'Exit VR';
+            vrButton.classList.add('vr-active');
           }
-        });
-      }
+        } else {
+          // Exit VR
+          vrManager.exitVR();
+          vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
+          vrButton.classList.remove('vr-active');
+        }
+      });
     }
-  }, 500); // Wait a bit for WebXR initialization
+  }
   
   // Update button state when VR session ends
   if (vrManager) {
@@ -1985,8 +2286,9 @@ function initializeVRManager() {
     });
   
     // Wire up VR references (will be set after components are initialized)
-    // Set playback controls reference when available
-    setTimeout(() => {
+    // Wait for playback controls and media manager to be ready
+    try {
+      await loadingManager.waitForAll(['playbackControls', 'mediaManager'], 10000);
       if (playbackControls && vrManager) {
         vrManager.setPlaybackControls(playbackControls);
       }
@@ -2000,9 +2302,9 @@ function initializeVRManager() {
       if (settingsPanelManager && vrManager) {
         vrManager.setSettingsPanel(settingsPanelManager);
       }
-    }, 1000);
-    
-    // Create test interactive object for VR
+    } catch (error) {
+      console.warn('VR references not ready:', error);
+    }
     
     // Setup VR preset selector in camera tab
     setupVRPresetSelector();
@@ -2101,12 +2403,12 @@ function setupVRPresetSelector() {
  */
 // Test VR object creation removed
 
-// Initialize VR manager when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeVRManager);
-} else {
+// Register VR manager initialization
+initManager.register('vrManager', async () => {
+  await loadingManager.waitFor('ui', 5000);
   initializeVRManager();
-}
+  loadingManager.setLoaded('vrManager');
+}, [], ['ui']);
 
 // Ensure floating button creation when VR session starts (in case floor is ready first)
 if (vrManager) {
@@ -2320,25 +2622,34 @@ window.addEventListener('orientationchange', () => {
 renderer.setAnimationLoop(animate);
 
 // Load default video at startup
-// Ensure playback controls are initialized first, then load video
-function loadDefaultVideo() {
-  // Wait a bit to ensure playback controls and MediaManager are initialized
-  if (!playbackControls || !mediaManager) {
-    setTimeout(loadDefaultVideo, 100);
-    return;
-  }
+initManager.register('loadDefaultVideo', async () => {
+  await loadingManager.waitForAll(['playbackControls', 'mediaManager'], 10000);
   console.log('Loading default video:', DEFAULT_VIDEO_PATH);
   loadVideoFromPath(DEFAULT_VIDEO_PATH);
+}, ['playbackControls', 'mediaManager'], ['playbackControls', 'mediaManager']);
+
+// Start initialization when DOM is ready
+async function startInitialization() {
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    await new Promise(resolve => {
+      document.addEventListener('DOMContentLoaded', resolve, { once: true });
+    });
+  }
+  
+  // Mark DOM as loaded
+  loadingManager.setLoaded('dom');
+  
+  // Start initialization process
+  try {
+    await initManager.initializeAll();
+    console.log('Initialization complete!');
+  } catch (error) {
+    console.error('Initialization error:', error);
+  }
 }
 
-if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', () => {
-    // Wait for playback controls to initialize
-    setTimeout(loadDefaultVideo, 200);
-  });
-} else {
-  // DOM already loaded, wait a bit for playback controls
-  setTimeout(loadDefaultVideo, 200);
-}
+// Start initialization
+startInitialization();
 
 
