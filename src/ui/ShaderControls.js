@@ -159,7 +159,7 @@ export class ShaderControls {
    * Copy all shader values to clipboard
    */
   copyAllShaderValues() {
-    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor', 'crowd'];
+    const shaderTypes = ['base', 'artists', 'stage', 'pillars', 'floor', 'roof', 'crowd', 'marble', 'cables'];
     const allValues = {};
     
     shaderTypes.forEach(shaderType => {
@@ -214,7 +214,7 @@ export class ShaderControls {
     console.log('Material references:', this.materialReferences);
     
     // Initialize controls for each shader type
-    const shaderTypes = ['artists', 'base', 'stage', 'pillars', 'floor', 'crowd'];
+    const shaderTypes = ['artists', 'base', 'stage', 'pillars', 'floor', 'roof', 'crowd', 'marble', 'cables'];
     shaderTypes.forEach(shaderType => {
       this.initShaderTypeControls(shaderType);
     });
@@ -226,6 +226,7 @@ export class ShaderControls {
       stage: getElement('copyStageShaderBtn'),
       pillars: getElement('copyPillarsShaderBtn'),
       floor: getElement('copyFloorShaderBtn'),
+      roof: getElement('copyRoofShaderBtn'),
       crowd: getElement('copyCrowdShaderBtn')
     };
     

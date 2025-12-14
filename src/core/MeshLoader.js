@@ -86,10 +86,27 @@ export class MeshLoader {
    */
   handleLEDMesh(model, path, textureMaterial, mappingType = null) {
     // Store reference to LED front mesh
+    // For separate front mesh files (old mapping types)
     if (path.includes('LED_FRONT') || path.includes('LED_Front')) {
       if (this.meshCallbacks.onLEDFrontLoaded) {
         this.meshCallbacks.onLEDFrontLoaded(model);
       }
+    }
+    
+    // For renderOption1 meshes (single GLB containing front mesh inside)
+    // Find front mesh immediately when loading
+    if (path.includes('Option1_Projection')) {
+      model.traverse((child) => {
+        if (child.isMesh && child.name && 
+            (child.name.includes('FRONT') || child.name.includes('Front') || 
+             child.name.includes('LED_FRONT') || child.name.includes('LED_Front'))) {
+          // Found front mesh inside the GLB - call the callback
+          if (this.meshCallbacks.onLEDFrontLoaded) {
+            this.meshCallbacks.onLEDFrontLoaded(child);
+            console.log('[MeshLoader] Found front mesh in renderOption1 GLB:', child.name);
+          }
+        }
+      });
     }
     
     // Store references to wing meshes
@@ -117,9 +134,10 @@ export class MeshLoader {
     }
     
     // Apply LED shader to LED meshes
-    // Check if this is a garage mesh (for mask application in mapping types B and D)
+    // Check if this is a garage mesh (for mask application in mapping types B and D, or Garagefix)
     const isGarageMesh = path.includes('SL_GARAGE') || path.includes('SR_GARAGE') || 
                          path.includes('SL_Garage') || path.includes('SR_Garage');
+    const isGaragefixMesh = path.includes('Garagefix');
     
     model.traverse((child) => {
       if (child.isMesh) {
@@ -128,7 +146,14 @@ export class MeshLoader {
           child.userData.originalMaterial = child.material;
         }
         if (textureMaterial && this.createLEDShaderMaterialFn) {
-          child.material = this.createLEDShaderMaterialFn(textureMaterial, mappingType, isGarageMesh);
+          // Check if this specific child is a garage mesh (by name)
+          let childIsGarage = isGarageMesh;
+          if (!childIsGarage && child.name) {
+            childIsGarage = child.name.includes('SL_GARAGE') || child.name.includes('SR_GARAGE') ||
+                           child.name.includes('SL_Garage') || child.name.includes('SR_Garage') ||
+                           child.name.includes('GARAGE') || child.name.includes('Garage');
+          }
+          child.material = this.createLEDShaderMaterialFn(textureMaterial, mappingType, childIsGarage, path);
         }
       }
     });
@@ -140,13 +165,6 @@ export class MeshLoader {
    * @param {string} path - Mesh path
    */
   handleStageMesh(model, path) {
-    // Store reference to DJ liftable mesh (deprecated)
-    if (path.includes('STAGE_DJ_LIFTABLE') || path.includes('Stage_DJ_Liftable')) {
-      if (this.meshCallbacks.onDJLiftableLoaded) {
-        this.meshCallbacks.onDJLiftableLoaded(model);
-      }
-    }
-    
     // Store reference to DJ low mesh
     if (path.includes('DJDeck_Down') || path.includes('DJ_Deck_Down')) {
       if (this.meshCallbacks.onDJLowLoaded) {
@@ -197,6 +215,79 @@ export class MeshLoader {
     
     model.traverse((child) => {
       if (child.isMesh) {
+        // Handle Artist mesh in DJDeck GLBs - assign artists shader
+        if (child.name && (child.name.includes('Artist') || child.name === 'Artist')) {
+          const artistsMaterial = this.shaderMaterials.artists.clone();
+          child.material = artistsMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.artists) {
+            this.materialReferences.artists = [];
+          }
+          this.materialReferences.artists.push(artistsMaterial);
+          console.log(`[MeshLoader] Applied artists shader to Artist mesh: ${child.name}`);
+          return;
+        }
+        
+        // Handle meshes starting with "E" in DJDeck GLBs - assign marble shader
+        if ((path.includes('DJDeck_Down') || path.includes('DJDeck_Elevated') || 
+             path.includes('DJ_Deck_Down') || path.includes('DJ_Deck_Elevated')) &&
+            child.name && child.name.startsWith('E')) {
+          const marbleMaterial = this.shaderMaterials.marble.clone();
+          child.material = marbleMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.marble) {
+            this.materialReferences.marble = [];
+          }
+          this.materialReferences.marble.push(marbleMaterial);
+          console.log(`[MeshLoader] Applied marble shader to mesh starting with E: ${child.name}`);
+          return;
+        }
+        
+        // Handle Extrusionk... meshes - assign marble shader
+        if (child.name && child.name.includes('Extrusionk')) {
+          const marbleMaterial = this.shaderMaterials.marble.clone();
+          child.material = marbleMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.marble) {
+            this.materialReferences.marble = [];
+          }
+          this.materialReferences.marble.push(marbleMaterial);
+          console.log(`[MeshLoader] Applied marble shader to Extrusionk mesh: ${child.name}`);
+          return;
+        }
+        
+        // Handle Cables_top and Cables_down meshes - assign cables shader
+        if (child.name && (child.name.includes('Cables_top') || child.name.includes('Cables_down') || 
+            child.name === 'Cables_top' || child.name === 'Cables_down')) {
+          const cablesMaterial = this.shaderMaterials.cables.clone();
+          child.material = cablesMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.cables) {
+            this.materialReferences.cables = [];
+          }
+          this.materialReferences.cables.push(cablesMaterial);
+          console.log(`[MeshLoader] Applied cables shader to cables mesh: ${child.name}`);
+          return;
+        }
+        
+        // Handle Platform_fixed* meshes in Stage_Platform.glb - assign marble shader
+        if (path.includes('Stage_Platform') && child.name && child.name.includes('Platform_fixed')) {
+          const marbleMaterial = this.shaderMaterials.marble.clone();
+          child.material = marbleMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.marble) {
+            this.materialReferences.marble = [];
+          }
+          this.materialReferences.marble.push(marbleMaterial);
+          console.log(`[MeshLoader] Applied marble shader to Platform_fixed mesh: ${child.name}`);
+          return;
+        }
+        
         // Skip DJ artist mesh - it should be handled separately
         if (this.meshCallbacks.onDJArtistLoaded && 
             child.name && (child.name.includes('DJ') || child.name.includes('dj'))) {

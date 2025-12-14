@@ -44,10 +44,10 @@ export const ledMeshFiles = {
     '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_E.glb'
   ],
   renderOption1: [
-    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection.glb'
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection_Garagefix.glb'
   ],
   renderOption1NoFront: [
-    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection.glb'
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection_Garagefix.glb'
   ],
   renderOption2NoFront: [
     '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option2_noFront.glb'
@@ -58,13 +58,11 @@ export const ledMeshFiles = {
 };
 
 export const stageMeshFiles = [
-  '/assets/meshes/ANYMA_Coachella_Stage_v008_CATWALK.glb',
-  '/assets/meshes/ANYMA_Coachella_Stage_v008_PILLARS.glb',
-  '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_CROWD.glb',
+  '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Columns.glb',
   // DJ_LIFTABLE removed - now using DJ Low/High toggle meshes
-  '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_GROUND.glb',
-  '/assets/meshes/ANYMA_Coachella_Stage_v010_STAGE_ARTISTS.glb',
-  '/assets/meshes/ANYMA_Coachella_Stage_v010_FLOOR.glb'
+  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Stage_Platform.glb',
+  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Roof.glb',
+  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_CrowdFloor_SpawnArea.glb'
 ];
 
 export const djMeshFiles = {
@@ -82,6 +80,23 @@ export const crowdMeshPaths = [
 
 // Default mapping type
 export const DEFAULT_MAPPING_TYPE = 'renderOption1';
+
+/**
+ * Get LED mesh files for a mapping type, with optional Garagefix toggle
+ * @param {string} mappingType - Mapping type
+ * @param {boolean} useGaragefix - Whether to use Garagefix version (for renderOption1/renderOption1NoFront)
+ * @returns {Array} Array of mesh file paths
+ */
+export function getLEDMeshFiles(mappingType, useGaragefix = true) {
+  if (mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront') {
+    if (useGaragefix) {
+      return ['/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection_Garagefix.glb'];
+    } else {
+      return ['/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection.glb'];
+    }
+  }
+  return ledMeshFiles[mappingType] || [];
+}
 
 // Corrected wing mesh paths for front projection types
 export const correctedWingMeshes = {

@@ -135,7 +135,10 @@ const materialReferences = {
   stage: [],
   pillars: [],
   floor: [],
-  crowd: []
+  crowd: [],
+  roof: [],
+  marble: [],
+  cables: []
 };
 
 // Double-sided shader material for stage meshes (legacy, kept for backwards compatibility)
@@ -301,12 +304,12 @@ function loadMesh(path, targetGroup, isStage = false) {
 }
 
 // Function to load LED meshes (wrapper for LEDMapping)
-function loadLEDMeshes(mappingType, useCorrected = false) {
+function loadLEDMeshes(mappingType, useCorrected = false, useGaragefix = true) {
   if (!ledMapping) {
     console.error('LEDMapping not initialized');
     return;
   }
-  ledMapping.loadLEDMeshes(mappingType, useCorrected);
+  ledMapping.loadLEDMeshes(mappingType, useCorrected, useGaragefix);
   // Update global references for backwards compatibility
   ledFrontMesh = ledMapping.getLEDFrontMesh();
   const garages = ledMapping.getGarageMeshes();
@@ -362,7 +365,7 @@ function checkLEDMeshesLoaded() {
 
 // Load initial LED meshes (Front Projection by default)
 // Note: useCorrectedMeshCheckbox will be defined later, so we default to false
-loadLEDMeshes(currentMappingType, false);
+loadLEDMeshes(currentMappingType, false, true);
 // Mark LED meshes as loaded after a short delay (they load asynchronously)
 // This will be improved when MeshLoader returns promises
 setTimeout(checkLEDMeshesLoaded, 500);
@@ -402,6 +405,7 @@ async function spawnCrowdCubes() {
   
   const slider = document.getElementById('crowdInstanceCountSlider');
   const instanceCount = slider ? parseInt(slider.value) || 4000 : 4000;
+  console.log(`[spawnCrowdCubes] Spawning ${instanceCount} crowd instances (slider value: ${slider ? slider.value : 'N/A'})`);
   await crowdSpawner.spawnCrowd(instanceCount);
 }
 
@@ -893,7 +897,7 @@ if (mappingTypeSelect) {
     // Get current state of "hide LED front" checkbox before switching
     const hideLedFrontCheckbox = document.getElementById('hideLedFront');
     const hideLedFrontGroup = document.getElementById('hideLedFrontGroup');
-    const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
+    // Don't capture the state yet - we'll update it based on the selected type
     
     // Hide LED Front checkbox is permanently hidden - no longer shown for any mapping type
     // if (hideLedFrontGroup) {
@@ -904,18 +908,17 @@ if (mappingTypeSelect) {
     //   }
     // }
     
-    // Auto-hide LED front for renderOption1NoFront
-    let autoHideLedFront = false;
+    // Handle front mesh visibility based on mapping type
+    // This is independent of garagefix - garagefix only affects which GLB file is loaded
     if (selectedType === 'renderOption1NoFront') {
-      autoHideLedFront = true;
       // Automatically check the hide LED front checkbox
       if (hideLedFrontCheckbox) {
         hideLedFrontCheckbox.checked = true;
       }
     } else if (selectedType === 'renderOption1') {
-      // Auto-show LED front for renderOption1 (unless checkbox is explicitly checked)
-      if (hideLedFrontCheckbox && !hideLedFrontCheckbox.checked) {
-        autoHideLedFront = false;
+      // Auto-show LED front for renderOption1 - uncheck the checkbox to show front
+      if (hideLedFrontCheckbox) {
+        hideLedFrontCheckbox.checked = false;
       }
     }
     
@@ -933,85 +936,33 @@ if (mappingTypeSelect) {
       }
     }
     
-    // Get checkbox state
+    // Show/hide Garagefix checkbox - only for renderOption1 types
+    const useGaragefixGroup = document.getElementById('useGaragefixGroup');
+    const useGaragefixCheckbox = document.getElementById('useGaragefix');
+    if (useGaragefixGroup) {
+      if (selectedType === 'renderOption1' || selectedType === 'renderOption1NoFront') {
+        useGaragefixGroup.style.display = 'block';
+      } else {
+        useGaragefixGroup.style.display = 'none';
+      }
+    }
+    
+    // Get checkbox states
     const useCorrected = useCorrectedMeshCheckbox ? useCorrectedMeshCheckbox.checked : false;
+    const useGaragefix = useGaragefixCheckbox ? useGaragefixCheckbox.checked : true;
     
     // Swap LED meshes
-    loadLEDMeshes(selectedType, useCorrected);
+    loadLEDMeshes(selectedType, useCorrected, useGaragefix);
     
-    // Apply LED front visibility based on checkbox state after meshes load
-    // Use a function that retries if meshes aren't ready yet
-    const applyLEDFrontVisibility = (retryCount = 0) => {
-      const maxRetries = 10;
-      const retryDelay = 200;
-      
-      // Determine desired visibility based on the checkbox state we captured
-      // For renderOption1NoFront, always hide LED front
-      let desiredVisibility = !shouldHideLedFront;
-      if (selectedType === 'renderOption1NoFront') {
-        desiredVisibility = false;
-      }
-      
-      // Special handling for festival mapping: default to hidden
-      if (selectedType === 'festival' && !shouldHideLedFront && hideLedFrontCheckbox) {
-        // If checkbox wasn't checked, auto-check it for festival mapping (default behavior)
-        hideLedFrontCheckbox.checked = true;
-        desiredVisibility = false;
-      }
-      
-      // Check if meshes are loaded by checking if ledsGroup has any mesh children (including nested)
-      let hasMeshes = false;
-      if (ledsGroup) {
-        ledsGroup.traverse((child) => {
-          if (child.isMesh) {
-            hasMeshes = true;
-          }
-        });
-      }
-      
-      if (!hasMeshes && retryCount < maxRetries) {
-        // Meshes not loaded yet, retry
-        setTimeout(() => applyLEDFrontVisibility(retryCount + 1), retryDelay);
-        return;
-      }
-      
-      // Apply visibility using LEDMapping method (handles LED_FRONT_* meshes)
+    // Update front mesh visibility after meshes load
+    // LEDMapping will handle this, but we'll also trigger an update after a delay
+    setTimeout(() => {
       if (ledMapping) {
-        ledMapping.setLEDFrontVisible(desiredVisibility);
-        // Update global reference for backwards compatibility
-        const currentLedFrontMesh = ledMapping.getLEDFrontMesh();
-        if (currentLedFrontMesh) {
-          ledFrontMesh = currentLedFrontMesh;
-        }
-      } else {
-        // Fallback for backwards compatibility
-        const currentLedFrontMesh = ledFrontMesh;
-        if (currentLedFrontMesh) {
-          currentLedFrontMesh.visible = desiredVisibility;
-        }
+        ledMapping.updateFrontMeshVisibility();
       }
-      
-      // Also directly traverse ledsGroup to ensure all LED_FRONT_* meshes are handled
-      // This is important for FarCam meshes which might not be in loadedLEDMeshes yet
-      if (ledsGroup) {
-        ledsGroup.traverse((child) => {
-          if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
-            child.visible = desiredVisibility;
-            console.log(`Set LED_FRONT_ mesh visibility: ${child.name} = ${desiredVisibility}`);
-          }
-        });
-      }
-      
       // Update LED shaders with current texture after loading
       updateLEDShaders(ledsGroup, material, selectedType);
-      
-      if (retryCount > 0) {
-        console.log(`Applied LED front visibility after ${retryCount} retries. Visibility: ${desiredVisibility}, Checkbox checked: ${shouldHideLedFront}`);
-      }
-    };
-    
-    // Start applying visibility after initial delay
-    setTimeout(() => applyLEDFrontVisibility(), 300);
+    }, 400);
   });
 }
 
@@ -1023,23 +974,21 @@ if (useCorrectedMeshCheckbox) {
     const hideLedFrontCheckbox = document.getElementById('hideLedFront');
     const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
     
-    // Reload LED meshes with corrected state
-    loadLEDMeshes(currentMappingType, useCorrected);
+    // Get Garagefix checkbox state
+    const useGaragefixCheckbox = document.getElementById('useGaragefix');
+    const useGaragefix = useGaragefixCheckbox ? useGaragefixCheckbox.checked : true;
     
-    // Wait for meshes to load and then restore visibility state
+    // Reload LED meshes with corrected state
+    loadLEDMeshes(currentMappingType, useCorrected, useGaragefix);
+    
+    // Wait for meshes to load and then update visibility
     setTimeout(() => {
-      // Get LED front mesh from LEDMapping (it manages the mesh)
-      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
-      
-      // Restore LED front visibility state based on checkbox
-      if (currentLedFrontMesh && hideLedFrontCheckbox) {
-        currentLedFrontMesh.visible = !shouldHideLedFront;
-        ledFrontMesh = currentLedFrontMesh; // Update global reference
+      if (ledMapping) {
+        ledMapping.updateFrontMeshVisibility();
       }
-      
       // Update LED shaders with current texture after loading
       updateLEDShaders(ledsGroup, material, currentMappingType);
-    }, 200);
+    }, 400);
   });
   
   // Reload corrected wings if checkbox is checked and mapping type supports it
@@ -1048,24 +997,51 @@ if (useCorrectedMeshCheckbox) {
     const hideLedFrontCheckbox = document.getElementById('hideLedFront');
     const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
     
-    // Reload LED meshes with corrected state
-    loadLEDMeshes(currentMappingType, true);
+    // Get Garagefix checkbox state
+    const useGaragefixCheckbox = document.getElementById('useGaragefix');
+    const useGaragefix = useGaragefixCheckbox ? useGaragefixCheckbox.checked : true;
     
-    // Wait for meshes to load and then restore visibility state
-    setTimeout(() => {
-      // Get LED front mesh from LEDMapping (it manages the mesh)
-      const currentLedFrontMesh = ledMapping ? ledMapping.getLEDFrontMesh() : ledFrontMesh;
-      
-      // Restore LED front visibility state
-      if (currentLedFrontMesh && hideLedFrontCheckbox) {
-        currentLedFrontMesh.visible = !shouldHideLedFront;
-        ledFrontMesh = currentLedFrontMesh; // Update global reference
-      }
-      
-      // Update LED shaders with current texture after loading
-      updateLEDShaders(ledsGroup, material, currentMappingType);
-    }, 200);
+    // Reload LED meshes with corrected state
+    loadLEDMeshes(currentMappingType, true, useGaragefix);
+    
+      // Wait for meshes to load and then update visibility
+      setTimeout(() => {
+        if (ledMapping) {
+          ledMapping.updateFrontMeshVisibility();
+        }
+        // Update LED shaders with current texture after loading
+        updateLEDShaders(ledsGroup, material, currentMappingType);
+      }, 400);
   }
+}
+
+// Garagefix checkbox change handler
+const useGaragefixCheckbox = document.getElementById('useGaragefix');
+if (useGaragefixCheckbox) {
+  useGaragefixCheckbox.addEventListener('change', (e) => {
+    const useGaragefix = e.target.checked;
+    // Get current visibility state before reloading
+    const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
+    
+    // Get corrected mesh checkbox state
+    const useCorrected = useCorrectedMeshCheckbox ? useCorrectedMeshCheckbox.checked : false;
+    
+    // Only reload if mapping type supports Garagefix
+    if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+      // Reload LED meshes with Garagefix state
+      loadLEDMeshes(currentMappingType, useCorrected, useGaragefix);
+      
+      // Wait for meshes to load and then update visibility
+      setTimeout(() => {
+        if (ledMapping) {
+          ledMapping.updateFrontMeshVisibility();
+        }
+        // Update LED shaders with current texture after loading (to apply/remove mask)
+        updateLEDShaders(ledsGroup, material, currentMappingType);
+      }, 400);
+    }
+  });
 }
 
 // Initialize checkbox visibility on page load
@@ -1082,6 +1058,16 @@ function initializeUI() {
       correctedMeshGroup.style.display = 'block';
     } else {
       correctedMeshGroup.style.display = 'none';
+    }
+  }
+  
+  // Initialize Garagefix checkbox visibility
+  const useGaragefixGroup = document.getElementById('useGaragefixGroup');
+  if (useGaragefixGroup) {
+    if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+      useGaragefixGroup.style.display = 'block';
+    } else {
+      useGaragefixGroup.style.display = 'none';
     }
   }
   
@@ -1673,71 +1659,31 @@ const hideLedFrontCheckbox = document.getElementById('hideLedFront');
 
 
 // Handle hide LED front checkbox
-hideLedFrontCheckbox.addEventListener('change', (e) => {
-  const shouldHide = e.target.checked;
-  const shouldShow = !shouldHide;
-  
-  // Use LEDMapping's method to hide/show LED front meshes (including LED_FRONT_* meshes)
-  if (ledMapping) {
-    ledMapping.setLEDFrontVisible(shouldShow);
-    // Also update the global reference for backwards compatibility
-    const currentLedFrontMesh = ledMapping.getLEDFrontMesh();
-    if (currentLedFrontMesh) {
-      ledFrontMesh = currentLedFrontMesh;
-    }
-  } else {
-    // Fallback for backwards compatibility
-    const currentLedFrontMesh = ledFrontMesh;
-    if (currentLedFrontMesh) {
-      currentLedFrontMesh.visible = shouldShow;
-      // Also traverse and hide/show LED_FRONT_* meshes
-      if (ledsGroup) {
-        ledsGroup.traverse((child) => {
-          if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
-            child.visible = shouldShow;
-          }
-        });
+// Hide LED front checkbox change handler
+if (hideLedFrontCheckbox) {
+  hideLedFrontCheckbox.addEventListener('change', (e) => {
+    // Use LEDMapping's method to update visibility based on mapping type and checkbox
+    if (ledMapping) {
+      ledMapping.updateFrontMeshVisibility();
+    } else {
+      // Fallback for backwards compatibility
+      const shouldHide = e.target.checked;
+      const shouldShow = !shouldHide;
+      const currentLedFrontMesh = ledFrontMesh;
+      if (currentLedFrontMesh) {
+        currentLedFrontMesh.visible = shouldShow;
+        // Also traverse and hide/show LED_FRONT_* meshes
+        if (ledsGroup) {
+          ledsGroup.traverse((child) => {
+            if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
+              child.visible = shouldShow;
+            }
+          });
+        }
       }
-    }
-  }
-  
-  console.log('LED front visibility set to:', shouldShow);
-});
-
-// Handle DJ height toggle button
-const djHeightToggleBtn = document.getElementById('djHeightToggleBtn');
-if (djHeightToggleBtn) {
-  djHeightToggleBtn.addEventListener('click', () => {
-    if (!djLowMesh || !djHighMesh) {
-      console.warn('DJ meshes not loaded yet');
-      return;
     }
     
-    if (currentDJMesh === djLowMesh) {
-      // Switch to high
-      djLowMesh.visible = false;
-      djHighMesh.visible = true;
-      currentDJMesh = djHighMesh;
-      // Reparent DJ artist mesh if it exists
-      if (djArtistMesh) {
-        if (djArtistMesh.parent) {
-          djArtistMesh.parent.remove(djArtistMesh);
-        }
-        djHighMesh.add(djArtistMesh);
-      }
-    } else {
-      // Switch to low
-      djHighMesh.visible = false;
-      djLowMesh.visible = true;
-      currentDJMesh = djLowMesh;
-      // Reparent DJ artist mesh if it exists
-      if (djArtistMesh) {
-        if (djArtistMesh.parent) {
-          djArtistMesh.parent.remove(djArtistMesh);
-        }
-        djLowMesh.add(djArtistMesh);
-      }
-    }
+    console.log('LED front visibility updated based on checkbox and mapping type');
   });
 }
 
@@ -1754,8 +1700,10 @@ if (crowdInstanceCountSlider && crowdInstanceCountValue) {
     crowdInstanceCountValue.textContent = value;
     
     // Respawn crowd instances with new count
-    if (floorMesh) {
-      spawnCrowdCubes();
+    if (floorMesh && crowdSpawner) {
+      spawnCrowdCubes().catch(err => {
+        console.error('Error respawning crowd:', err);
+      });
     }
   });
 }
@@ -1819,6 +1767,43 @@ function initializeMediaManager() {
   }
   
   loadingManager.setLoaded('mediaManager');
+}
+
+// Handle DJ height toggle button
+const djHeightToggleBtn = document.getElementById('djHeightToggleBtn');
+if (djHeightToggleBtn) {
+  djHeightToggleBtn.addEventListener('click', () => {
+    if (!djLowMesh || !djHighMesh) {
+      console.warn('DJ meshes not loaded yet');
+      return;
+    }
+    
+    if (currentDJMesh === djLowMesh) {
+      // Switch to high
+      djLowMesh.visible = false;
+      djHighMesh.visible = true;
+      currentDJMesh = djHighMesh;
+      // Reparent DJ artist mesh if it exists
+      if (djArtistMesh) {
+        if (djArtistMesh.parent) {
+          djArtistMesh.parent.remove(djArtistMesh);
+        }
+        djHighMesh.add(djArtistMesh);
+      }
+    } else {
+      // Switch to low
+      djHighMesh.visible = false;
+      djLowMesh.visible = true;
+      currentDJMesh = djLowMesh;
+      // Reparent DJ artist mesh if it exists
+      if (djArtistMesh) {
+        if (djArtistMesh.parent) {
+          djArtistMesh.parent.remove(djArtistMesh);
+        }
+        djLowMesh.add(djArtistMesh);
+      }
+    }
+  });
 }
 
 // Register MediaManager initialization (must happen before playbackControls)

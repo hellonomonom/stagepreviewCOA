@@ -15,7 +15,7 @@ export const shaderConfigs = {
     specular: 0.500
   },
   stage: {
-    baseColor: [0.231, 0.231, 0.231],
+    baseColor: [0.090, 0.090, 0.090],
     roughness: 0.700,
     specular: 0.200
   },
@@ -29,10 +29,25 @@ export const shaderConfigs = {
     roughness: 0.900,
     specular: 0.000
   },
+  roof: {
+    baseColor: [0.129, 0.129, 0.129],
+    roughness: 0.700,
+    specular: 0.200
+  },
   crowd: {
     baseColor: [0.059, 0.059, 0.059],
     roughness: 0.081,
     specular: 0.000
+  },
+  marble: {
+    baseColor: [0.271, 0.271, 0.271],
+    roughness: 0.000,
+    specular: 0.500
+  },
+  cables: {
+    baseColor: [0.502, 0.129, 0.039],
+    roughness: 0.500,
+    specular: 0.200
   }
 };
 

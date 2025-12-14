@@ -87,7 +87,7 @@ export function loadMaskTexture() {
     
     const loader = new THREE.TextureLoader();
     loader.load(
-      '/assets/textures/OverlapMask_3600x720.png',
+      '/assets/textures/OverlapMask_4465x950.png',
       (texture) => {
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
@@ -111,9 +111,16 @@ export function loadMaskTexture() {
  * @param {boolean} isGarageMesh - Whether this is a garage mesh (optional, for mask application)
  * @returns {THREE.ShaderMaterial} LED shader material
  */
-export function createLEDShaderMaterial(textureMaterial, mappingType = null, isGarageMesh = false) {
-  // Determine if mask should be used (for mapping types B and D, only on garage meshes)
-  const useMask = isGarageMesh && (mappingType === 'farCamB' || mappingType === 'farCamD');
+export function createLEDShaderMaterial(textureMaterial, mappingType = null, isGarageMesh = false, meshPath = null) {
+  // Determine if mask should be used:
+  // - For mapping types B and D, only on garage meshes
+  // - For renderOption1/renderOption1NoFront, ONLY on garage meshes from Garagefix mesh (not regular Projection)
+  const isGaragefixMesh = meshPath && meshPath.includes('Garagefix');
+  const useMask = isGarageMesh && (
+    mappingType === 'farCamB' || 
+    mappingType === 'farCamD' ||
+    (isGaragefixMesh && (mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront'))
+  );
   
   // Create a default white texture if mask texture isn't loaded yet
   const defaultMaskTexture = maskTexture || new THREE.Texture();
@@ -160,8 +167,9 @@ export function updateLEDShaders(ledsGroup, textureMaterial, mappingType = null)
   const textureOffsetU = textureMaterial.uniforms.uTextureOffsetU.value;
   const textureOffsetV = textureMaterial.uniforms.uTextureOffsetV.value;
   
-  // Check if mapping type requires mask (B or D)
-  const mappingRequiresMask = mappingType === 'farCamB' || mappingType === 'farCamD';
+  // Check if mapping type requires mask (B, D, or renderOption1/renderOption1NoFront with Garagefix)
+  const mappingRequiresMask = mappingType === 'farCamB' || mappingType === 'farCamD' ||
+                               mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront';
   
   ledsGroup.traverse((child) => {
     if (child.isMesh && child.material && child.material.uniforms) {
@@ -174,29 +182,51 @@ export function updateLEDShaders(ledsGroup, textureMaterial, mappingType = null)
       child.material.uniforms.uTextureOffsetV.value = textureOffsetV;
       
       // Update mask texture and use mask flag
-      // Only apply mask to garage meshes in mapping types B and D
+      // Apply mask to garage meshes in mapping types B, D, or renderOption1/renderOption1NoFront with Garagefix
       if (child.material.uniforms.uMaskTexture) {
         child.material.uniforms.uMaskTexture.value = maskTexture || child.material.uniforms.uMaskTexture.value;
       }
       if (child.material.uniforms.uUseMask) {
         // Check if this mesh is a garage mesh by checking its parent path or mesh name
         let isGarageMesh = false;
+        let isGaragefixMesh = false;
+        let meshPath = null;
         
-        // Check parent path (for separate garage mesh files)
+        // Check parent path (for separate garage mesh files or Garagefix mesh)
         if (child.parent && child.parent.userData && child.parent.userData.path) {
-          const path = child.parent.userData.path;
-          isGarageMesh = path.includes('SL_GARAGE') || path.includes('SR_GARAGE') ||
-                         path.includes('SL_Garage') || path.includes('SR_Garage');
+          meshPath = child.parent.userData.path;
+          isGaragefixMesh = meshPath.includes('Garagefix');
+          isGarageMesh = meshPath.includes('SL_GARAGE') || meshPath.includes('SR_GARAGE') ||
+                         meshPath.includes('SL_Garage') || meshPath.includes('SR_Garage');
         }
         
-        // Check mesh name (for FarCam files where garage meshes are inside the GLB)
+        // Check mesh name (for FarCam files or Garagefix where garage meshes are inside the GLB)
         if (!isGarageMesh && child.name) {
           isGarageMesh = child.name.includes('SL_GARAGE') || child.name.includes('SR_GARAGE') ||
                          child.name.includes('SL_Garage') || child.name.includes('SR_Garage') ||
                          child.name.includes('GARAGE') || child.name.includes('Garage');
         }
         
-        const useMask = mappingRequiresMask && isGarageMesh;
+        // Also check if parent is Garagefix mesh by traversing up
+        if (!isGaragefixMesh) {
+          let parent = child.parent;
+          while (parent) {
+            if (parent.userData && parent.userData.path && parent.userData.path.includes('Garagefix')) {
+              isGaragefixMesh = true;
+              meshPath = parent.userData.path;
+              break;
+            }
+            parent = parent.parent;
+          }
+        }
+        
+        // Apply mask if:
+        // - Mapping type is B or D and it's a garage mesh
+        // - Mapping type is renderOption1/renderOption1NoFront and it's a garage mesh from Garagefix
+        const useMask = isGarageMesh && (
+          mappingType === 'farCamB' || mappingType === 'farCamD' ||
+          (isGaragefixMesh && (mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront'))
+        );
         child.material.uniforms.uUseMask.value = useMask ? 1.0 : 0.0;
       }
       

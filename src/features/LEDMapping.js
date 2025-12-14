@@ -4,7 +4,7 @@
  */
 
 import * as THREE from 'three';
-import { ledMeshFiles, correctedWingMeshes } from '../config/meshPaths.js';
+import { ledMeshFiles, correctedWingMeshes, getLEDMeshFiles } from '../config/meshPaths.js';
 
 export class LEDMapping {
   constructor(meshLoader, ledsGroup, material, createLEDShaderMaterial, updateLEDShaders) {
@@ -61,10 +61,23 @@ export class LEDMapping {
    * Load LED meshes for a specific mapping type
    * @param {string} mappingType - Mapping type (festival, frontProjection, frontProjectionPerspective)
    * @param {boolean} useCorrected - Whether to use corrected wing meshes
+   * @param {boolean} useGaragefix - Whether to use Garagefix version (for renderOption1/renderOption1NoFront)
    */
-  loadLEDMeshes(mappingType, useCorrected = false) {
-    // Store LED front visibility state before clearing (to prevent flash)
-    this.restoreLedFrontVisible = this.ledFrontMesh ? this.ledFrontMesh.visible : true;
+  loadLEDMeshes(mappingType, useCorrected = false, useGaragefix = true) {
+    // Determine desired visibility based on mapping type ONLY
+    // This is the single source of truth - garagefix doesn't affect front mesh visibility
+    let desiredVisibility = true;
+    if (mappingType === 'renderOption1NoFront') {
+      desiredVisibility = false;
+    } else if (mappingType === 'renderOption1') {
+      // For renderOption1, show by default (checkbox can override later)
+      desiredVisibility = true;
+    }
+    
+    // Store LED front visibility state - this will be applied when mesh is found
+    this.restoreLedFrontVisible = desiredVisibility;
+    // Store mapping type FIRST so callbacks can use it
+    this.currentMappingType = mappingType;
     
     // Clear ALL existing LED meshes from ledsGroup (more thorough cleanup)
     // Collect all direct children of ledsGroup to avoid issues with modifying array during iteration
@@ -121,8 +134,13 @@ export class LEDMapping {
     this.slGarageMesh = null;
     this.srGarageMesh = null;
     
-    // Get paths and replace wing meshes if corrected is enabled
-    let paths = [...ledMeshFiles[mappingType]];
+    // Get paths using getLEDMeshFiles to handle Garagefix toggle
+    let paths = [...getLEDMeshFiles(mappingType, useGaragefix)];
+    
+    // Fallback to original ledMeshFiles if getLEDMeshFiles returns empty
+    if (paths.length === 0) {
+      paths = [...(ledMeshFiles[mappingType] || [])];
+    }
     
     if (useCorrected && (mappingType === 'frontProjection' || mappingType === 'frontProjectionPerspective')) {
       const correctedMeshes = correctedWingMeshes[mappingType];
@@ -144,8 +162,10 @@ export class LEDMapping {
       onLEDFrontLoaded: (mesh) => {
         this.ledFrontMesh = mesh;
         this.loadedLEDMeshes.push(mesh);
-        // Immediately restore visibility state to prevent flash
+        // Immediately apply visibility based on mapping type
+        // Use restoreLedFrontVisible which was set based on mapping type
         this.ledFrontMesh.visible = this.restoreLedFrontVisible;
+        console.log('[LEDMapping] Front mesh loaded, visibility set to:', this.restoreLedFrontVisible, 'for mapping type:', this.currentMappingType);
       },
       onWingLoaded: (side, mesh) => {
         if (side === 'sl') {
@@ -189,10 +209,14 @@ export class LEDMapping {
           }
         }
       });
-    }, 200);
-    
-    // Update current mapping type
-    this.currentMappingType = mappingType;
+      
+      // Final check: ensure front mesh visibility is correct
+      // This handles cases where the mesh was found but visibility wasn't set
+      if (this.ledFrontMesh) {
+        // Use updateFrontMeshVisibility which will check current state
+        this.updateFrontMeshVisibility();
+      }
+    }, 300);
     
     // Restore black material state if checkbox is checked
     // Wait a bit longer to ensure meshes are fully loaded
@@ -221,20 +245,42 @@ export class LEDMapping {
   }
   
   /**
-   * Set LED front mesh visibility
-   * @param {boolean} visible - Whether to show the LED front mesh
+   * Get the correct front mesh visibility based on current mapping type
+   * @returns {boolean} Whether the front mesh should be visible
    */
-  setLEDFrontVisible(visible) {
+  getFrontMeshVisibility() {
+    if (this.currentMappingType === 'renderOption1NoFront') {
+      return false;
+    } else if (this.currentMappingType === 'renderOption1') {
+      // Check checkbox state
+      const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+      return hideLedFrontCheckbox ? !hideLedFrontCheckbox.checked : true;
+    }
+    // For other mapping types, check checkbox
+    const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    return hideLedFrontCheckbox ? !hideLedFrontCheckbox.checked : true;
+  }
+  
+  /**
+   * Set LED front mesh visibility based on current mapping type
+   * This is the main method to call when you want to update front mesh visibility
+   */
+  updateFrontMeshVisibility() {
+    const visibility = this.getFrontMeshVisibility();
+    
     if (this.ledFrontMesh) {
-      this.ledFrontMesh.visible = visible;
-      this.restoreLedFrontVisible = visible;
+      this.ledFrontMesh.visible = visibility;
+      this.restoreLedFrontVisible = visibility;
     }
     
-    // Also hide/show all meshes with names containing "LED_FRONT_" in loaded meshes
+    // Also hide/show all meshes with names containing "FRONT" or "LED_FRONT" in loaded meshes
     this.loadedLEDMeshes.forEach(mesh => {
       mesh.traverse((child) => {
-        if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
-          child.visible = visible;
+        if (child.isMesh && child.name && 
+            (child.name.includes('LED_FRONT_') || 
+             (this.currentMappingType === 'renderOption1' || this.currentMappingType === 'renderOption1NoFront') &&
+             (child.name.includes('FRONT') || child.name.includes('Front')))) {
+          child.visible = visibility;
         }
       });
     });
@@ -242,11 +288,25 @@ export class LEDMapping {
     // Also check ledsGroup directly to catch any meshes that might not be in loadedLEDMeshes
     if (this.ledsGroup) {
       this.ledsGroup.traverse((child) => {
-        if (child.isMesh && child.name && child.name.includes('LED_FRONT_')) {
-          child.visible = visible;
+        if (child.isMesh && child.name && 
+            (child.name.includes('LED_FRONT_') || 
+             (this.currentMappingType === 'renderOption1' || this.currentMappingType === 'renderOption1NoFront') &&
+             (child.name.includes('FRONT') || child.name.includes('Front')))) {
+          child.visible = visibility;
         }
       });
     }
+    
+    console.log('[LEDMapping] Updated front mesh visibility to:', visibility, 'for mapping type:', this.currentMappingType);
+  }
+  
+  /**
+   * Set LED front mesh visibility (legacy method for backwards compatibility)
+   * @param {boolean} visible - Whether to show the LED front mesh
+   */
+  setLEDFrontVisible(visible) {
+    this.restoreLedFrontVisible = visible;
+    this.updateFrontMeshVisibility();
   }
   
   /**

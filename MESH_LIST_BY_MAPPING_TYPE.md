@@ -2,12 +2,8 @@
 
 ## Stage Meshes (Always Loaded - Same for All Mapping Types)
 These meshes are loaded regardless of mapping type:
-- CATWALK
-- PILLARS
-- STAGE_CROWD
-- STAGE_DJ_LIFTABLE
+- PILLARS (Columns)
 - STAGE_GROUND
-- STAGE_ARTISTS
 - FLOOR
 
 ---

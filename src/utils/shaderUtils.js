@@ -26,19 +26,24 @@ export function getShaderType(path) {
     return 'stage';
   }
   
-  // Base shader: CATWALK, STAGE_GROUND, STAGE_DJ (but not LIFTABLE)
-  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground') || lowerPath.includes('stage_dj')) {
+  // Base shader: CATWALK, STAGE_GROUND
+  if (lowerPath.includes('catwalk') || lowerPath.includes('stage_ground')) {
     return 'base';
   }
   
-  // Pillars shader
-  if (lowerPath.includes('pillars')) {
+  // Pillars shader (includes Columns)
+  if (lowerPath.includes('pillars') || lowerPath.includes('columns')) {
     return 'pillars';
   }
   
   // Floor shader
   if (lowerPath.includes('floor')) {
     return 'floor';
+  }
+  
+  // Roof shader
+  if (lowerPath.includes('roof')) {
+    return 'roof';
   }
   
   // Default to stage shader for other stage meshes
