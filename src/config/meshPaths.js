@@ -60,9 +60,9 @@ export const ledMeshFiles = {
 export const stageMeshFiles = [
   '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Columns.glb',
   // DJ_LIFTABLE removed - now using DJ Low/High toggle meshes
-  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Stage_Platform.glb',
-  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Roof.glb',
-  '/public/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_CrowdFloor_SpawnArea.glb'
+  '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Stage_Platform.glb',
+  '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Roof.glb',
+  '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_CrowdFloor_SpawnArea.glb'
 ];
 
 export const djMeshFiles = {
