@@ -145,3 +145,9 @@ console.log(initStatus);
 - Mesh loading still uses setTimeout temporarily until MeshLoader is refactored to return promises
 - All critical initialization steps now use the loading system
 
+
+
+
+
+
+

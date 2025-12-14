@@ -383,7 +383,8 @@ export class MediaManager {
     if (this.showMappingCheckbox && this.showMappingCheckbox.checked && this.mapping) {
       this.mapping.classList.add('active');
     }
-    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked && this.frameInfo) {
+    // Only show frame info if not using NDI
+    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked && this.frameInfo && !this.currentNDIStream) {
       this.frameInfo.classList.add('active');
     }
     if (this.stillInfo) this.stillInfo.classList.remove('active');
@@ -888,7 +889,8 @@ export class MediaManager {
     if (this.showMappingCheckbox && this.showMappingCheckbox.checked && this.mapping) {
       this.mapping.classList.add('active');
     }
-    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked && this.frameInfo) {
+    // Only show frame info if not using NDI
+    if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked && this.frameInfo && !this.currentNDIStream) {
       this.frameInfo.classList.add('active');
     }
     if (this.stillInfo) this.stillInfo.classList.remove('active');

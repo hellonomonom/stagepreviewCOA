@@ -53,3 +53,10 @@ if ($output -match "ERR_NGROK_108|authtoken|Your authtoken") {
     Write-Host "Could not determine status. Full output above." -ForegroundColor Yellow
 }
 
+
+
+
+
+
+
+

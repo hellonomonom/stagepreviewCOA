@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"name": "nomonom_title",
+			"path": "C:\\Users\\tobia\\Dropbox\\_Projects\\Nomonom_Website\\nomonom_title"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/.git": true,
+			"**/.DS_Store": true,
+			"**/node_modules": true
+		}
+	}
+}
+

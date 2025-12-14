@@ -42,6 +42,18 @@ export const ledMeshFiles = {
   ],
   farCamE: [
     '/assets/meshes/FarCam/ANYMA_Coachella_Stage_v023_E.glb'
+  ],
+  renderOption1: [
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection.glb'
+  ],
+  renderOption1NoFront: [
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option1_Projection.glb'
+  ],
+  renderOption2NoFront: [
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option2_noFront.glb'
+  ],
+  renderOption2WithFront: [
+    '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_Option2_wFront.glb'
   ]
 };
 
@@ -49,11 +61,16 @@ export const stageMeshFiles = [
   '/assets/meshes/ANYMA_Coachella_Stage_v008_CATWALK.glb',
   '/assets/meshes/ANYMA_Coachella_Stage_v008_PILLARS.glb',
   '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_CROWD.glb',
-  '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_DJ_LIFTABLE.glb',
+  // DJ_LIFTABLE removed - now using DJ Low/High toggle meshes
   '/assets/meshes/ANYMA_Coachella_Stage_v008_STAGE_GROUND.glb',
   '/assets/meshes/ANYMA_Coachella_Stage_v010_STAGE_ARTISTS.glb',
   '/assets/meshes/ANYMA_Coachella_Stage_v010_FLOOR.glb'
 ];
+
+export const djMeshFiles = {
+  low: '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_DJDeck_Down.glb',
+  high: '/assets/meshes/Release/Stage_static/ANYMA_Coachella_StageDec_v009_DJDeck_Elevated.glb'
+};
 
 export const crowdMeshPaths = [
   '/assets/meshes/Crowd/crowd_v001_female1.glb',
@@ -64,7 +81,7 @@ export const crowdMeshPaths = [
 ];
 
 // Default mapping type
-export const DEFAULT_MAPPING_TYPE = 'farCamA';
+export const DEFAULT_MAPPING_TYPE = 'renderOption1';
 
 // Corrected wing mesh paths for front projection types
 export const correctedWingMeshes = {
@@ -77,6 +94,13 @@ export const correctedWingMeshes = {
     sr: '/assets/meshes/WINGS_CORR/ANYMA_Coachella_Stage_v015_SR_WING_CORR_PERSP.glb'
   }
 };
+
+
+
+
+
+
+
 
 
 

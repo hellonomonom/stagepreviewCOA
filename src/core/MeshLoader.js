@@ -24,7 +24,9 @@ export class MeshLoader {
       onDJLiftableLoaded: null,
       onFloorLoaded: null,
       onArtistsLoaded: null,
-      onDJArtistLoaded: null
+      onDJArtistLoaded: null,
+      onDJLowLoaded: null,
+      onDJHighLoaded: null
     };
   }
   
@@ -138,10 +140,24 @@ export class MeshLoader {
    * @param {string} path - Mesh path
    */
   handleStageMesh(model, path) {
-    // Store reference to DJ liftable mesh
+    // Store reference to DJ liftable mesh (deprecated)
     if (path.includes('STAGE_DJ_LIFTABLE') || path.includes('Stage_DJ_Liftable')) {
       if (this.meshCallbacks.onDJLiftableLoaded) {
         this.meshCallbacks.onDJLiftableLoaded(model);
+      }
+    }
+    
+    // Store reference to DJ low mesh
+    if (path.includes('DJDeck_Down') || path.includes('DJ_Deck_Down')) {
+      if (this.meshCallbacks.onDJLowLoaded) {
+        this.meshCallbacks.onDJLowLoaded(model);
+      }
+    }
+    
+    // Store reference to DJ high mesh
+    if (path.includes('DJDeck_Elevated') || path.includes('DJ_Deck_Elevated')) {
+      if (this.meshCallbacks.onDJHighLoaded) {
+        this.meshCallbacks.onDJHighLoaded(model);
       }
     }
     

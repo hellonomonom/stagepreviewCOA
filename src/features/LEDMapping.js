@@ -170,14 +170,23 @@ export class LEDMapping {
       this.meshLoader.loadMesh(path, this.ledsGroup, false, this.material, mappingType);
     });
     
-    // Track FarCam meshes (and any other meshes that don't match callbacks)
+    // Track FarCam meshes and render option meshes (and any other meshes that don't match callbacks)
     // after a delay to ensure they're loaded
     setTimeout(() => {
       this.ledsGroup.children.forEach(child => {
         if (child.userData && child.userData.path && 
-            child.userData.path.includes('FarCam') && 
             !this.loadedLEDMeshes.includes(child)) {
-          this.loadedLEDMeshes.push(child);
+          // Track FarCam meshes
+          if (child.userData.path.includes('FarCam')) {
+            this.loadedLEDMeshes.push(child);
+          }
+          // Track render option meshes (single-file GLBs like FarCam)
+          if (child.userData.path.includes('Release/Stage_static') || 
+              child.userData.path.includes('Option1_Projection') ||
+              child.userData.path.includes('Option2_noFront') ||
+              child.userData.path.includes('Option2_wFront')) {
+            this.loadedLEDMeshes.push(child);
+          }
         }
       });
     }, 200);

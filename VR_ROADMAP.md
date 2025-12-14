@@ -129,3 +129,10 @@ I'm ready to implement whatever you think would be most valuable! 🎯
 
 
 
+
+
+
+
+
+
+

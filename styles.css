@@ -766,15 +766,18 @@ canvas {
     align-items: center;
     gap: var(--space-sm);
     justify-content: center;
-    flex-wrap: wrap;
-    word-wrap: break-word;
-    white-space: normal;
+    flex-wrap: nowrap;
+    word-wrap: normal;
+    white-space: nowrap;
     max-width: 90vw;
     transform-origin: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .frame-info,
 .frame-info span {
+    white-space: nowrap;
     color: var(--color-text-muted);
 }
 
@@ -791,15 +794,18 @@ canvas {
     align-items: center;
     gap: var(--space-sm);
     justify-content: center;
-    flex-wrap: wrap;
-    word-wrap: break-word;
-    white-space: normal;
+    flex-wrap: nowrap;
+    word-wrap: normal;
+    white-space: nowrap;
     max-width: 90vw;
     transform-origin: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .still-info,
 .still-info span {
+    white-space: nowrap;
     color: var(--color-text-muted);
 }
 

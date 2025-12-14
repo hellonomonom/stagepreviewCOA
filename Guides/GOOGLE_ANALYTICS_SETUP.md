@@ -156,3 +156,10 @@ mappingTypeSelect.addEventListener('change', (e) => {
 
 
 
+
+
+
+
+
+
+

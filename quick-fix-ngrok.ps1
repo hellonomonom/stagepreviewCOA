@@ -59,3 +59,10 @@ Write-Host "- If you see 'connection' error: Check your internet"
 Write-Host "- If you see 'rate limit': Wait a few minutes"
 Write-Host ""
 
+
+
+
+
+
+
+

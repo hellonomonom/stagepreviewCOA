@@ -48,7 +48,7 @@
                                     <option value="texture" selected>Image/Video</option>
                                     <option value="ndi">NDI STREAM</option>
                                 </select>
-                                <div class="file-input-wrapper" style="flex-shrink: 0;">
+                                <div class="file-input-wrapper" id="fileInputWrapper" style="flex-shrink: 0;">
                                     <input 
                                         type="file" 
                                         id="textureInput" 
@@ -64,17 +64,12 @@
                         <div class="control-group" id="textureInputGroup">
                             <label for="videoAssetSelect" class="label">Sample Assets</label>
                             <select id="videoAssetSelect" class="dropdown">
-                                <option value="checkerboard5to1">Checkerboard (5:1)</option>
-                                <option value="checkerboard55to1">Checkerboard (5.5:1)</option>
-                                <option value="character5to1">Character (5:1)</option>
-                                <option value="character55to1">Character (5.5:1)</option>
-                                <option value="/assets/videos/DunDun_5to1.mp4">DunDun (5:1)</option>
-                                <option value="/assets/videos/HumanNow_5to1.mp4">HumanNow (5:1)</option>
-                                <option value="/assets/videos/Eva_v12_5to1.mp4" selected>Eva v12 (5:1)</option>
-                                <option value="/assets/videos/DunDun_55to1.mp4">DunDun (5.5:1)</option>
-                                <option value="/assets/videos/DunDun_55to1_tc60fps.mp4">DunDun (5.5:1, TC 60fps)</option>
-                                <option value="/assets/videos/HumanNow_55to1.mp4">HumanNow (5.5:1)</option>
-                                <option value="/assets/videos/Eva_v12_55to1.mp4">Eva v12 (5.5:1)</option>
+                                <option value="/assets/videos/ANYMA_DunDun_Option1_47to1.mp4" selected>DunDun Option 1 (4.7:1)</option>
+                                <option value="/assets/videos/ANYMA_Eva_Option1_47to1.mp4">Eva Option 1 (4.7:1)</option>
+                                <option value="/assets/videos/ANYMA_HumanNow_Option1_47to1.mp4">HumanNow Option 1 (4.7:1)</option>
+                                <option value="/assets/videos/ANYMA_DunDun_Option2_6to1.mp4">DunDun Option 2 (6:1)</option>
+                                <option value="/assets/videos/ANYMA_Eva_Option2_6to1.mp4">Eva Option 2 (6:1)</option>
+                                <option value="/assets/videos/ANYMA_HumanNow_Option2_6to1.mp4">HumanNow Option 2 (6:1)</option>
                             </select>
                         </div>
                         <div class="control-group">
@@ -97,14 +92,10 @@
                         <div class="control-group">
                             <label class="label">Mapping Type</label>
                             <select id="mappingTypeSelect" class="dropdown">
-                                <option value="farCamA" selected>A - Far/Flaps/Bow/GarageFix (5:1)</option>
-                                <option value="farCamB">B - Far/Flaps/Bow/Mask (5:1)</option>
-                                <option value="farCamC">C - Far/Flaps/Bow/GarageFix/ShiftY (5:1)</option>
-                                <option value="farCamD">D - Far/Flaps/Bow/ShiftY/Mask (5:1)</option>
-                                <option value="farCamE">E - Flaps/Bow/GarageFix/ShiftY/Scale (5:1)</option>
-                                <option value="frontProjectionPerspective">Front Projection Perspective (5.1:1) (old)</option>
-                                <option value="frontProjection">Front Projection Orthographic (5.1:1) (old)</option>
-                                <option value="festival">Festival Mapping (7.4:1) (old)</option>
+                                <option value="renderOption1" selected>Render Option 1 4.7:1 - Projection w Front</option>
+                                <option value="renderOption1NoFront">Render Option 1 4.7:1 - Projection no Front</option>
+                                <option value="renderOption2NoFront">Render Option 2 6:1 - no Front</option>
+                                <option value="renderOption2WithFront">Render Option 2 6:1 - with Front</option>
                             </select>
                         </div>
                         <div class="control-group" id="correctedMeshGroup" style="display: none;">
@@ -113,16 +104,10 @@
                                 <label for="useCorrectedMesh" class="label-inline">Use corrected mesh</label>
                             </div>
                         </div>
-                        <div class="control-group">
+                        <div class="control-group" id="hideLedFrontGroup" style="display: none !important;" hidden>
                             <div class="checkbox-wrapper">
                                 <input type="checkbox" id="hideLedFront">
                                 <label for="hideLedFront" class="label-inline">Hide LED Front</label>
-                            </div>
-                        </div>
-                        <div class="control-group">
-                            <div class="checkbox-wrapper">
-                                <input type="checkbox" id="blackGarages" />
-                                <label for="blackGarages" class="label-inline">Turn Garages Black</label>
                             </div>
                         </div>
                         <div class="control-group">
@@ -213,18 +198,7 @@
                     <!-- Stage Tab Content -->
                     <div class="tab-panel" id="stageTabPanel">
                         <div class="control-group">
-                            <label for="djDeckHeightSlider" class="label">
-                                Height DJ: <span class="value" id="djDeckHeightValue">0.0m</span>
-                            </label>
-                            <input 
-                                type="range" 
-                                id="djDeckHeightSlider" 
-                                class="slider" 
-                                min="0" 
-                                max="12" 
-                                step="0.1" 
-                                value="0"
-                            />
+                            <button class="btn btn-sm" id="djHeightToggleBtn">Toggle DJ Height</button>
                         </div>
                         <div class="control-group">
                             <label for="crowdInstanceCountSlider" class="label">
@@ -244,7 +218,7 @@
 
                     <!-- Camera Tab Content -->
                     <div class="tab-panel" id="cameraTabPanel">
-                        <div class="control-group">
+                        <div class="control-group" style="display: none;">
                             <label class="label">VR Camera Presets</label>
                             <div style="display: flex; gap: var(--space-sm); align-items: center;">
                                 <select id="vrPresetSelect" class="dropdown" style="flex: 1;">
@@ -316,8 +290,8 @@
         <span class="material-icons">menu</span>
     </button>
 
-    <!-- VR Toggle Button -->
-    <button class="vr-toggle-button" id="vrToggleButton" aria-label="Enter VR" style="display: none;">
+    <!-- VR Toggle Button (Hidden - functionality kept intact) -->
+    <button class="vr-toggle-button" id="vrToggleButton" aria-label="Enter VR" style="display: none !important;" hidden>
         <span class="material-icons">view_in_ar</span>
         <span class="vr-button-text">Enter VR</span>
     </button>

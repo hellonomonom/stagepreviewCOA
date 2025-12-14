@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes } from './src/config/meshPaths.js';
+import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes, djMeshFiles } from './src/config/meshPaths.js';
 import { shaderConfigs } from './src/config/shaderConfig.js';
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from './src/config/cameraPresets.js';
 import { vrCameraPresets, DEFAULT_VR_CAMERA_PRESET } from './src/config/vrCameraPresets.js';
@@ -93,9 +93,12 @@ const ledsGroup = new THREE.Group();
 ledsGroup.name = 'LEDs';
 const stageGroup = new THREE.Group();
 stageGroup.name = 'Stage';
-let djLiftableMesh = null; // Reference to the DJ liftable stage mesh
+let djLiftableMesh = null; // Reference to the DJ liftable stage mesh (deprecated - kept for compatibility)
 let artistsMeshes = []; // Array to store individual meshes from artists.glb
 let djArtistMesh = null; // Reference to the DJ artist mesh
+let djLowMesh = null; // Reference to the DJ low mesh
+let djHighMesh = null; // Reference to the DJ high mesh
+let currentDJMesh = null; // Track which DJ mesh is active
 
 // Store reference to LED front mesh
 let ledFrontMesh = null;
@@ -214,14 +217,50 @@ meshLoader.setCallbacks({
       materialReferences.artists = [];
     }
     materialReferences.artists.push(artistsMaterial);
-    // Parent DJ artist mesh to liftable stage if it's already loaded
-    if (djLiftableMesh) {
+    // Parent DJ artist mesh to current DJ mesh if available
+    if (currentDJMesh) {
+      if (mesh.parent) {
+        mesh.parent.remove(mesh);
+      }
+      currentDJMesh.add(mesh);
+      console.log('Parented DJ artist mesh to current DJ mesh');
+    } else if (djLiftableMesh) {
+      // Fallback to old liftable mesh for compatibility
       if (mesh.parent) {
         mesh.parent.remove(mesh);
       }
       djLiftableMesh.add(mesh);
       console.log('Parented DJ artist mesh to liftable stage');
     }
+  },
+  onDJLowLoaded: (mesh) => {
+    djLowMesh = mesh;
+    console.log('DJ low mesh loaded');
+    // Make it visible by default
+    mesh.visible = true;
+    if (!currentDJMesh) {
+      currentDJMesh = mesh;
+    }
+    // If DJ artist mesh is already loaded, parent it to the low mesh
+    if (djArtistMesh) {
+      if (djArtistMesh.parent) {
+        djArtistMesh.parent.remove(djArtistMesh);
+      }
+      mesh.add(djArtistMesh);
+      console.log('Parented DJ artist mesh to DJ low mesh');
+    }
+    // Add to stage group
+    stageGroup.add(mesh);
+  },
+  onDJHighLoaded: (mesh) => {
+    djHighMesh = mesh;
+    console.log('DJ high mesh loaded');
+    // Hidden by default
+    mesh.visible = false;
+    // If DJ artist mesh is already loaded and we're on low, don't parent yet
+    // It will be parented when toggling
+    // Add to stage group
+    stageGroup.add(mesh);
   }
 });
 
@@ -335,6 +374,10 @@ meshFiles.stage.forEach(path => {
   // This will be improved when MeshLoader returns promises
   setTimeout(checkStageMeshesLoaded, 100);
 });
+
+// Load DJ meshes (low and high)
+loadMesh(djMeshFiles.low, stageGroup, true);
+loadMesh(djMeshFiles.high, stageGroup, true);
 
 
 // Crowd spawning - individual crowd meshes on the floor mesh with random mesh selection
@@ -704,8 +747,21 @@ function initializeNDIUI() {
       // Show texture input, hide NDI controls
       textureInputGroup.style.display = 'block';
       textureInputGroup.classList.remove('hidden');
+      const fileInputWrapper = document.getElementById('fileInputWrapper');
+      if (fileInputWrapper) {
+        fileInputWrapper.style.display = 'flex';
+      }
       ndiStreamGroup.style.display = 'none';
       ndiStreamGroup.classList.add('hidden');
+      // Show frame info when using texture/video (if checkbox is checked)
+      if (frameInfo) {
+        frameInfo.style.display = '';
+        const showFileInfoCheckbox = document.getElementById('showFileInfo');
+        const videoElement = mediaManager ? mediaManager.getCurrentVideoElement() : null;
+        if (showFileInfoCheckbox && showFileInfoCheckbox.checked && videoElement) {
+          frameInfo.classList.add('active');
+        }
+      }
       
       // Restore last selected video asset or load default
       if (videoAssetSelect && lastSelectedVideoAsset) {
@@ -723,8 +779,17 @@ function initializeNDIUI() {
       // Show NDI controls, hide texture input
       textureInputGroup.style.display = 'none';
       textureInputGroup.classList.add('hidden');
+      const fileInputWrapper = document.getElementById('fileInputWrapper');
+      if (fileInputWrapper) {
+        fileInputWrapper.style.display = 'none';
+      }
       ndiStreamGroup.style.display = 'block';
       ndiStreamGroup.classList.remove('hidden');
+      // Hide frame info when using NDI
+      if (frameInfo) {
+        frameInfo.classList.remove('active');
+        frameInfo.style.display = 'none';
+      }
       // Try to load OBS Virtual Camera directly (bypasses NDI discovery)
       console.log('Source type changed to NDI, loading OBS Virtual Camera...');
       loadOBSVirtualCamera().catch(error => {
@@ -744,8 +809,17 @@ function initializeNDIUI() {
     // Show NDI controls, hide texture input
     textureInputGroup.style.display = 'none';
     textureInputGroup.classList.add('hidden');
+    const fileInputWrapper = document.getElementById('fileInputWrapper');
+    if (fileInputWrapper) {
+      fileInputWrapper.style.display = 'none';
+    }
     ndiStreamGroup.style.display = 'block';
     ndiStreamGroup.classList.remove('hidden');
+    // Hide frame info when using NDI
+    if (frameInfo) {
+      frameInfo.classList.remove('active');
+      frameInfo.style.display = 'none';
+    }
     // Try to load OBS Virtual Camera directly (bypasses NDI discovery)
     console.log('Initial source type is NDI, loading OBS Virtual Camera...');
     loadOBSVirtualCamera().catch(error => {
@@ -760,6 +834,10 @@ function initializeNDIUI() {
     // Show texture input, hide NDI controls
     textureInputGroup.style.display = 'block';
     textureInputGroup.classList.remove('hidden');
+    const fileInputWrapper = document.getElementById('fileInputWrapper');
+    if (fileInputWrapper) {
+      fileInputWrapper.style.display = 'flex';
+    }
     ndiStreamGroup.style.display = 'none';
     ndiStreamGroup.classList.add('hidden');
   }
@@ -796,6 +874,16 @@ loadingManager.addListener('ui', () => {
 const mappingTypeSelect = document.getElementById('mappingTypeSelect');
 const useCorrectedMeshCheckbox = document.getElementById('useCorrectedMesh');
 const correctedMeshGroup = document.getElementById('correctedMeshGroup');
+const hideLedFrontGroup = document.getElementById('hideLedFrontGroup');
+
+// Hide LED Front checkbox is permanently hidden
+// if (hideLedFrontGroup) {
+//   if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+//     hideLedFrontGroup.style.display = 'block';
+//   } else {
+//     hideLedFrontGroup.style.display = 'none';
+//   }
+// }
 
 if (mappingTypeSelect) {
   mappingTypeSelect.addEventListener('change', (e) => {
@@ -804,11 +892,32 @@ if (mappingTypeSelect) {
     
     // Get current state of "hide LED front" checkbox before switching
     const hideLedFrontCheckbox = document.getElementById('hideLedFront');
+    const hideLedFrontGroup = document.getElementById('hideLedFrontGroup');
     const shouldHideLedFront = hideLedFrontCheckbox ? hideLedFrontCheckbox.checked : false;
     
-    // Get current state of "turn garages black" checkbox before switching
-    const blackGaragesCheckbox = document.getElementById('blackGarages');
-    const shouldTurnGaragesBlack = blackGaragesCheckbox ? blackGaragesCheckbox.checked : false;
+    // Hide LED Front checkbox is permanently hidden - no longer shown for any mapping type
+    // if (hideLedFrontGroup) {
+    //   if (selectedType === 'renderOption1' || selectedType === 'renderOption1NoFront') {
+    //     hideLedFrontGroup.style.display = 'block';
+    //   } else {
+    //     hideLedFrontGroup.style.display = 'none';
+    //   }
+    // }
+    
+    // Auto-hide LED front for renderOption1NoFront
+    let autoHideLedFront = false;
+    if (selectedType === 'renderOption1NoFront') {
+      autoHideLedFront = true;
+      // Automatically check the hide LED front checkbox
+      if (hideLedFrontCheckbox) {
+        hideLedFrontCheckbox.checked = true;
+      }
+    } else if (selectedType === 'renderOption1') {
+      // Auto-show LED front for renderOption1 (unless checkbox is explicitly checked)
+      if (hideLedFrontCheckbox && !hideLedFrontCheckbox.checked) {
+        autoHideLedFront = false;
+      }
+    }
     
     // Show/hide corrected mesh checkbox
     // Hide for FarCam options (A-E) and festival, show only for frontProjection types
@@ -837,7 +946,11 @@ if (mappingTypeSelect) {
       const retryDelay = 200;
       
       // Determine desired visibility based on the checkbox state we captured
+      // For renderOption1NoFront, always hide LED front
       let desiredVisibility = !shouldHideLedFront;
+      if (selectedType === 'renderOption1NoFront') {
+        desiredVisibility = false;
+      }
       
       // Special handling for festival mapping: default to hidden
       if (selectedType === 'festival' && !shouldHideLedFront && hideLedFrontCheckbox) {
@@ -891,11 +1004,6 @@ if (mappingTypeSelect) {
       
       // Update LED shaders with current texture after loading
       updateLEDShaders(ledsGroup, material, selectedType);
-      
-      // Restore black garages state based on checkbox
-      if (ledMapping) {
-        ledMapping.applyBlackToGarages(shouldTurnGaragesBlack);
-      }
       
       if (retryCount > 0) {
         console.log(`Applied LED front visibility after ${retryCount} retries. Visibility: ${desiredVisibility}, Checkbox checked: ${shouldHideLedFront}`);
@@ -1562,9 +1670,6 @@ timelineSlider.addEventListener('input', () => {
 
 // Checkbox to toggle mapping visibility
 const hideLedFrontCheckbox = document.getElementById('hideLedFront');
-const blackGaragesCheckbox = document.getElementById('blackGarages');
-const djDeckHeightSlider = document.getElementById('djDeckHeightSlider');
-const djDeckHeightValue = document.getElementById('djDeckHeightValue');
 
 
 // Handle hide LED front checkbox
@@ -1599,27 +1704,42 @@ hideLedFrontCheckbox.addEventListener('change', (e) => {
   console.log('LED front visibility set to:', shouldShow);
 });
 
-// Handle black garages checkbox
-if (blackGaragesCheckbox) {
-  blackGaragesCheckbox.addEventListener('change', (e) => {
-    console.log('Black garages checkbox changed:', e.target.checked);
-    if (ledMapping) {
-      ledMapping.applyBlackToGarages(e.target.checked);
+// Handle DJ height toggle button
+const djHeightToggleBtn = document.getElementById('djHeightToggleBtn');
+if (djHeightToggleBtn) {
+  djHeightToggleBtn.addEventListener('click', () => {
+    if (!djLowMesh || !djHighMesh) {
+      console.warn('DJ meshes not loaded yet');
+      return;
+    }
+    
+    if (currentDJMesh === djLowMesh) {
+      // Switch to high
+      djLowMesh.visible = false;
+      djHighMesh.visible = true;
+      currentDJMesh = djHighMesh;
+      // Reparent DJ artist mesh if it exists
+      if (djArtistMesh) {
+        if (djArtistMesh.parent) {
+          djArtistMesh.parent.remove(djArtistMesh);
+        }
+        djHighMesh.add(djArtistMesh);
+      }
+    } else {
+      // Switch to low
+      djHighMesh.visible = false;
+      djLowMesh.visible = true;
+      currentDJMesh = djLowMesh;
+      // Reparent DJ artist mesh if it exists
+      if (djArtistMesh) {
+        if (djArtistMesh.parent) {
+          djArtistMesh.parent.remove(djArtistMesh);
+        }
+        djLowMesh.add(djArtistMesh);
+      }
     }
   });
 }
-
-// Handle DJ deck height slider
-djDeckHeightSlider.addEventListener('input', (e) => {
-  const value = parseFloat(e.target.value); // Value in meters (0-12)
-  djDeckHeightValue.textContent = value.toFixed(1) + 'm';
-  
-  // Control the height of the DJ liftable stage mesh
-  // Convert meters to Three.js units (assuming 1 meter = 1 unit, or adjust as needed)
-  if (djLiftableMesh) {
-    djLiftableMesh.position.y = value;
-  }
-});
 
 // Crowd instance count slider
 const crowdInstanceCountSlider = document.getElementById('crowdInstanceCountSlider');
@@ -1834,7 +1954,7 @@ async function loadNDIStream(streamName) {
 
 // Legacy function wrapper - replaced by MediaManager
 // Default video path
-const DEFAULT_VIDEO_PATH = '/assets/videos/Eva_v12_5to1.mp4';
+const DEFAULT_VIDEO_PATH = '/assets/videos/ANYMA_DunDun_Option1_47to1.mp4';
 
 // Function to load checkerboard texture
 function loadCheckerboardTexture(checkerboardType = '55to1') {
@@ -2251,29 +2371,30 @@ async function initializeVRManager() {
   await new Promise(resolve => setTimeout(resolve, 500));
   
   // Check VR availability and show button if supported
-  if (vrManager && vrManager.isVRAvailable()) {
-    const vrButton = document.getElementById('vrToggleButton');
-    if (vrButton) {
-      vrButton.style.display = 'flex';
-      
-      // Setup VR button click handler
-      vrButton.addEventListener('click', async () => {
-        if (!vrManager.getIsVRActive()) {
-          // Enter VR
-          const success = await vrManager.enterVR();
-          if (success) {
-            vrButton.querySelector('.vr-button-text').textContent = 'Exit VR';
-            vrButton.classList.add('vr-active');
-          }
-        } else {
-          // Exit VR
-          vrManager.exitVR();
-          vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
-          vrButton.classList.remove('vr-active');
-        }
-      });
-    }
-  }
+  // VR button is temporarily hidden - functionality kept intact
+  // if (vrManager && vrManager.isVRAvailable()) {
+  //   const vrButton = document.getElementById('vrToggleButton');
+  //   if (vrButton) {
+  //     vrButton.style.display = 'flex';
+  //     
+  //     // Setup VR button click handler
+  //     vrButton.addEventListener('click', async () => {
+  //       if (!vrManager.getIsVRActive()) {
+  //         // Enter VR
+  //         const success = await vrManager.enterVR();
+  //         if (success) {
+  //           vrButton.querySelector('.vr-button-text').textContent = 'Exit VR';
+  //           vrButton.classList.add('vr-active');
+  //         }
+  //       } else {
+  //         // Exit VR
+  //         vrManager.exitVR();
+  //         vrButton.querySelector('.vr-button-text').textContent = 'Enter VR';
+  //         vrButton.classList.remove('vr-active');
+  //       }
+  //     });
+  //   }
+  // }
   
   // Update button state when VR session ends
   if (vrManager) {
