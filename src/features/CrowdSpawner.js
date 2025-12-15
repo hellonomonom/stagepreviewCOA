@@ -111,8 +111,8 @@ export class CrowdSpawner {
    */
   async sampleAndSavePositions(mesh) {
     // Bump storage key version to force resampling with updated spawn area
-    const STORAGE_KEY = 'crowdSpawnPositions_v2';
-    const OLD_STORAGE_KEYS = ['crowdSpawnPositions'];
+    const STORAGE_KEY = 'crowdSpawnPositions_v3';
+    const OLD_STORAGE_KEYS = ['crowdSpawnPositions', 'crowdSpawnPositions_v2'];
     const NUM_SAMPLES = 5000;
     
     // Check if positions are already cached in localStorage
