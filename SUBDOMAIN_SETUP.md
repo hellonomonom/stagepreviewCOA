@@ -1,11 +1,11 @@
-# Subdomain Setup Guide: preview.anyma.com → Digital Ocean Server
+# Subdomain Setup Guide: coachella.anyma.com → Digital Ocean Server
 
 ## Overview
 
-This guide will help you point `preview.anyma.com` to your Digital Ocean server (157.230.118.34) and set up HTTPS (required for WebXR).
+This guide will help you point `coachella.anyma.com` to your Digital Ocean server (157.230.118.34) and set up HTTPS (required for WebXR).
 
 **Current Server:** http://157.230.118.34/  
-**Target Subdomain:** https://preview.anyma.com
+**Target Subdomain:** https://coachella.anyma.com
 
 **✅ WebXR Compatibility:** Yes, WebXR will work perfectly with this setup! WebXR requires HTTPS, which we'll configure using Let's Encrypt SSL certificates.
 
@@ -32,7 +32,7 @@ This is the IP address you'll use for the DNS A record. Your server is currently
 - http://157.230.118.34/
 
 After DNS setup, it will also be accessible at:
-- https://preview.anyma.com
+- https://coachella.anyma.com
 
 ---
 
@@ -53,9 +53,9 @@ Since your domain is managed on IONOS, follow these steps:
 
 3. **Add A Record for Subdomain:**
    - Click **"Add Record"** or **"+"** button
-   - **Record Type:** Select `A` (or `A Record`)
-   - **Name/Host:** Enter `preview` (this creates `preview.anyma.com`)
-     - ⚠️ **Important:** Enter only `preview`, NOT `preview.anyma.com`
+- **Record Type:** Select `A` (or `A Record`)
+- **Name/Host:** Enter `coachella` (this creates `coachella.anyma.com`)
+    - ⚠️ **Important:** Enter only `coachella`, NOT `coachella.anyma.com`
    - **Points to/Value:** Enter `157.230.118.34`
      - This is your Digital Ocean server IP
    - **TTL:** Leave default (usually 3600 seconds) or set to `3600`
@@ -64,10 +64,10 @@ Since your domain is managed on IONOS, follow these steps:
 4. **Verify the Record:**
    - You should see a new A record in the list:
      ```
-     Type: A
-     Name: preview
-     Value: 157.230.118.34
-     TTL: 3600
+    Type: A
+    Name: coachella
+    Value: 157.230.118.34
+    TTL: 3600
      ```
 
 **IONOS Interface Notes:**
@@ -86,7 +86,7 @@ If you have access to IONOS API or advanced DNS settings:
 ### DNS Propagation
 
 - ⏱️ **Wait 5-60 minutes** for DNS to propagate
-- **Test DNS:** Run `nslookup preview.anyma.com` or `dig preview.anyma.com`
+- **Test DNS:** Run `nslookup coachella.anyma.com` or `dig coachella.anyma.com`
 - You should see: `157.230.118.34`
 
 ---
@@ -115,7 +115,7 @@ If you have access to IONOS API or advanced DNS settings:
    ```nginx
    server {
        listen 80;
-       server_name preview.anyma.com;  # Update this line
+       server_name coachella.anyma.com;  # Update this line
        
        # ... rest of config
    }
@@ -157,7 +157,7 @@ sudo yum install certbot python3-certbot-nginx -y
 Certbot can automatically configure nginx:
 
 ```bash
-sudo certbot --nginx -d preview.anyma.com
+sudo certbot --nginx -d coachella.anyma.com
 ```
 
 **During setup:**
@@ -171,7 +171,7 @@ If you prefer manual configuration:
 
 ```bash
 # Get certificate only
-sudo certbot certonly --nginx -d preview.anyma.com
+sudo certbot certonly --nginx -d coachella.anyma.com
 ```
 
 Then manually update nginx config (see Step 6).
@@ -191,10 +191,10 @@ Then manually update nginx config (see Step 6).
    ```nginx
    server {
        listen 443 ssl http2;
-       server_name preview.anyma.com;
+       server_name coachella.anyma.com;
    
-       ssl_certificate /etc/letsencrypt/live/preview.anyma.com/fullchain.pem;
-       ssl_certificate_key /etc/letsencrypt/live/preview.anyma.com/privkey.pem;
+       ssl_certificate /etc/letsencrypt/live/coachella.anyma.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/coachella.anyma.com/privkey.pem;
        ssl_protocols TLSv1.2 TLSv1.3;
        ssl_ciphers HIGH:!aNULL:!MD5;
        ssl_prefer_server_ciphers on;
@@ -256,7 +256,7 @@ Then manually update nginx config (see Step 6).
    # Redirect HTTP to HTTPS
    server {
        listen 80;
-       server_name preview.anyma.com;
+       server_name coachella.anyma.com;
        return 301 https://$server_name$request_uri;
    }
    ```
@@ -302,30 +302,30 @@ sudo systemctl status certbot.timer
 
 ### 1. Test DNS Resolution:
 ```bash
-nslookup preview.anyma.com
+nslookup coachella.anyma.com
 # Should return: 157.230.118.34
 ```
 
 ### 2. Test HTTP (should redirect to HTTPS):
 ```bash
-curl -I http://preview.anyma.com
+curl -I http://coachella.anyma.com
 # Should see: HTTP/1.1 301 Moved Permanently
 ```
 
 ### 3. Test HTTPS:
 ```bash
-curl -I https://preview.anyma.com
+curl -I https://coachella.anyma.com
 # Should see: HTTP/2 200
 ```
 
 ### 4. Test in Browser:
-- Open: `https://preview.anyma.com`
+- Open: `https://coachella.anyma.com`
 - Should see your application (same as http://157.230.118.34/)
 - Check for SSL padlock 🔒 in address bar
 
 ### 5. Test WebXR:
-- **Quest 3:** Open Quest Browser → Navigate to `https://preview.anyma.com` → Click "Enter VR"
-- **Vision Pro:** Open Safari → Navigate to `https://preview.anyma.com` → Click "Enter VR"
+- **Quest 3:** Open Quest Browser → Navigate to `https://coachella.anyma.com` → Click "Enter VR"
+- **Vision Pro:** Open Safari → Navigate to `https://coachella.anyma.com` → Click "Enter VR"
 - **Desktop:** Test in Chrome/Firefox with WebXR enabled
 
 ---
@@ -358,17 +358,17 @@ curl -I https://preview.anyma.com
 ### DNS Not Resolving:
 - Wait longer (up to 24 hours for full propagation, but usually 5-60 minutes)
 - Check DNS records are correct in IONOS
-- **IONOS-specific:** Make sure you entered only `preview` in the Name field, NOT `preview.anyma.com`
+- **IONOS-specific:** Make sure you entered only `coachella` in the Name field, NOT `coachella.anyma.com`
 - **IONOS-specific:** Verify the A record shows: `157.230.118.34`
 - **IONOS-specific:** Check if IONOS has any DNS caching or propagation delays
-- Use `dig preview.anyma.com` or `nslookup preview.anyma.com` to verify
-- Try different DNS servers: `nslookup preview.anyma.com 8.8.8.8` (Google DNS)
+- Use `dig coachella.anyma.com` or `nslookup coachella.anyma.com` to verify
+- Try different DNS servers: `nslookup coachella.anyma.com 8.8.8.8` (Google DNS)
 - Expected result: `157.230.118.34`
 
 ### SSL Certificate Issues:
 - Ensure port 80 is open (required for Let's Encrypt validation)
 - Check nginx is running: `sudo systemctl status nginx`
-- Verify domain points to your server: `nslookup preview.anyma.com`
+- Verify domain points to your server: `nslookup coachella.anyma.com`
 - Should return: `157.230.118.34`
 
 ### 502 Bad Gateway:
@@ -393,8 +393,8 @@ curl -I https://preview.anyma.com
 
 ```bash
 # Check DNS (should return 157.230.118.34)
-nslookup preview.anyma.com
-dig preview.anyma.com
+nslookup coachella.anyma.com
+dig coachella.anyma.com
 
 # Check nginx status
 sudo systemctl status nginx
@@ -418,7 +418,7 @@ sudo ufw status
 
 # Test current server
 curl -I http://157.230.118.34/
-curl -I https://preview.anyma.com
+curl -I https://coachella.anyma.com
 ```
 
 ---
@@ -431,10 +431,10 @@ curl -I https://preview.anyma.com
 4. ✅ HTTPS working
 5. ✅ WebXR tested and working
 
-**Your subdomain is now live at:** `https://preview.anyma.com` 🎉
+**Your subdomain is now live at:** `https://coachella.anyma.com` 🎉
 
 **Current server:** http://157.230.118.34/  
-**New subdomain:** https://preview.anyma.com
+**New subdomain:** https://coachella.anyma.com
 
 ---
 
@@ -443,8 +443,8 @@ curl -I https://preview.anyma.com
 ### Common IONOS DNS Issues:
 
 1. **Wrong Hostname Format:**
-   - ❌ Wrong: `preview.anyma.com`
-   - ✅ Correct: `preview`
+   - ❌ Wrong: `coachella.anyma.com`
+   - ✅ Correct: `coachella`
 
 2. **DNS Propagation:**
    - IONOS DNS changes can take 5-60 minutes
