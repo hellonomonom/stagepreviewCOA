@@ -936,14 +936,26 @@ if (mappingTypeSelect) {
       }
     }
     
-    // Show/hide Garagefix checkbox - only for renderOption1 types
+  // Show/hide Garagefix checkbox - only for renderOption1NoFront
     const useGaragefixGroup = document.getElementById('useGaragefixGroup');
     const useGaragefixCheckbox = document.getElementById('useGaragefix');
+    const overlapMaskGroup = document.getElementById('overlapMaskGroup');
+    const overlapMaskCheckbox = document.getElementById('enableOverlapMask');
     if (useGaragefixGroup) {
-      if (selectedType === 'renderOption1' || selectedType === 'renderOption1NoFront') {
+      if (selectedType === 'renderOption1NoFront') {
         useGaragefixGroup.style.display = 'block';
       } else {
         useGaragefixGroup.style.display = 'none';
+      }
+    }
+    // Overlap mask checkbox is only visible when Garagefix is supported AND enabled (Option 1 - no Front)
+    if (overlapMaskGroup) {
+      const isNoFront = selectedType === 'renderOption1NoFront';
+      const garagefixOn = useGaragefixCheckbox ? useGaragefixCheckbox.checked : true;
+      if (isNoFront && garagefixOn) {
+        overlapMaskGroup.style.display = 'block';
+      } else {
+        overlapMaskGroup.style.display = 'none';
       }
     }
     
@@ -1027,8 +1039,19 @@ if (useGaragefixCheckbox) {
     // Get corrected mesh checkbox state
     const useCorrected = useCorrectedMeshCheckbox ? useCorrectedMeshCheckbox.checked : false;
     
-    // Only reload if mapping type supports Garagefix
-    if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+    // Update overlap mask checkbox visibility when Garagefix is toggled (only for Option 1 - no Front)
+    const overlapMaskGroup = document.getElementById('overlapMaskGroup');
+    if (overlapMaskGroup) {
+      const isNoFront = currentMappingType === 'renderOption1NoFront';
+      if (isNoFront && useGaragefix) {
+        overlapMaskGroup.style.display = 'block';
+      } else {
+        overlapMaskGroup.style.display = 'none';
+      }
+    }
+    
+    // Only reload if mapping type supports Garagefix (Option 1 - no Front)
+    if (currentMappingType === 'renderOption1NoFront') {
       // Reload LED meshes with Garagefix state
       loadLEDMeshes(currentMappingType, useCorrected, useGaragefix);
       
@@ -1041,6 +1064,14 @@ if (useGaragefixCheckbox) {
         updateLEDShaders(ledsGroup, material, currentMappingType);
       }, 400);
     }
+  });
+}
+
+// Overlap mask checkbox change handler - just reapply LED shaders with current toggle state
+const overlapMaskCheckbox = document.getElementById('enableOverlapMask');
+if (overlapMaskCheckbox) {
+  overlapMaskCheckbox.addEventListener('change', () => {
+    updateLEDShaders(ledsGroup, material, currentMappingType);
   });
 }
 
@@ -1064,11 +1095,60 @@ function initializeUI() {
   // Initialize Garagefix checkbox visibility
   const useGaragefixGroup = document.getElementById('useGaragefixGroup');
   if (useGaragefixGroup) {
-    if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+    if (currentMappingType === 'renderOption1NoFront') {
       useGaragefixGroup.style.display = 'block';
     } else {
       useGaragefixGroup.style.display = 'none';
     }
+  }
+  
+  // Initialize overlap mask checkbox visibility
+  const overlapMaskGroup = document.getElementById('overlapMaskGroup');
+  const useGaragefixCheckboxInit = document.getElementById('useGaragefix');
+  if (overlapMaskGroup) {
+    const isNoFront = currentMappingType === 'renderOption1NoFront';
+    const garagefixOn = useGaragefixCheckboxInit ? useGaragefixCheckboxInit.checked : true;
+    if (isNoFront && garagefixOn) {
+      overlapMaskGroup.style.display = 'block';
+    } else {
+      overlapMaskGroup.style.display = 'none';
+    }
+  }
+  
+  // Initialize cables color control in Stage tab
+  const stageCablesColorPicker = document.getElementById('stageCablesColorPicker');
+  const stageCablesColorValue = document.getElementById('stageCablesColorValue');
+  if (stageCablesColorPicker) {
+    // Helper to convert hex to [0-1] RGB
+    const hexToRgb01 = (hex) => {
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      return [r, g, b];
+    };
+    
+    // Initialize picker from current cables shader config if available
+    try {
+      const cablesMaterial = shaderMaterials.cables;
+      if (cablesMaterial && cablesMaterial.uniforms && cablesMaterial.uniforms.uBaseColor) {
+        const v = cablesMaterial.uniforms.uBaseColor.value;
+        const r = Math.round(v.x * 255).toString(16).padStart(2, '0');
+        const g = Math.round(v.y * 255).toString(16).padStart(2, '0');
+        const b = Math.round(v.z * 255).toString(16).padStart(2, '0');
+        stageCablesColorPicker.value = `#${r}${g}${b}`;
+      }
+    } catch (e) {
+      console.warn('Could not initialize cables color picker from shader:', e);
+    }
+    
+    stageCablesColorPicker.addEventListener('input', (e) => {
+      const rgb = hexToRgb01(e.target.value);
+      // Update cables shader base color
+      updateShaderUniforms('cables', 'uBaseColor', rgb);
+      if (stageCablesColorValue) {
+        stageCablesColorValue.textContent = e.target.value.toUpperCase();
+      }
+    });
   }
   
   // Mark UI as loaded if DOM is ready and we found key elements
@@ -2147,7 +2227,22 @@ if (videoAssetSelect) {
     }
     
     if (selectedValue) {
-      if (selectedValue === 'checkerboard5to1') {
+      // Image assets from bundled textures (e.g., UV grids)
+      const isImageAsset = selectedValue.endsWith('.png') || selectedValue.endsWith('.jpg') || selectedValue.endsWith('.jpeg');
+      
+      if (isImageAsset) {
+        console.log('Loading image from dropdown selection:', selectedValue);
+        if (mediaManager && typeof mediaManager.loadImageFromPath === 'function') {
+          mediaManager.loadImageFromPath(selectedValue);
+        } else {
+          console.warn('MediaManager.loadImageFromPath is not available, falling back to video loader');
+          loadVideoFromPath(selectedValue);
+        }
+        // Reset file input
+        if (textureInput) {
+          textureInput.value = '';
+        }
+      } else if (selectedValue === 'checkerboard5to1') {
         console.log('Loading checkerboard texture (5:1)...');
         loadCheckerboardTexture('5to1');
         // Reset file input

@@ -45,9 +45,8 @@ export const shaderConfigs = {
     specular: 0.500
   },
   cables: {
-    baseColor: [0.502, 0.129, 0.039],
+    baseColor: [0.459, 0.459, 0.459],
     roughness: 0.500,
     specular: 0.200
   }
 };
-

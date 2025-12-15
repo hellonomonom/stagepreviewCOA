@@ -110,11 +110,14 @@ export class CrowdSpawner {
    * @returns {Promise} Promise that resolves with the positions array
    */
   async sampleAndSavePositions(mesh) {
-    const STORAGE_KEY = 'crowdSpawnPositions';
+    // Bump storage key version to force resampling with updated spawn area
+    const STORAGE_KEY = 'crowdSpawnPositions_v2';
+    const OLD_STORAGE_KEYS = ['crowdSpawnPositions'];
     const NUM_SAMPLES = 5000;
     
     // Check if positions are already cached in localStorage
     try {
+      // Prefer new key; if missing or invalid, we'll resample
       const cached = localStorage.getItem(STORAGE_KEY);
       if (cached) {
         const positions = JSON.parse(cached);
@@ -135,6 +138,14 @@ export class CrowdSpawner {
     // Save to localStorage
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
+      // Clean up any old keys to avoid confusion
+      OLD_STORAGE_KEYS.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // ignore
+        }
+      });
       console.log(`[CrowdSpawner] Saved ${positions.length} positions to localStorage`);
     } catch (error) {
       console.warn('[CrowdSpawner] Error saving positions to localStorage:', error);

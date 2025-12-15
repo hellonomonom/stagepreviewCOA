@@ -641,6 +641,93 @@ export class MediaManager {
   }
   
   /**
+   * Load image from a path (e.g., a bundled asset URL)
+   * @param {string} imagePath - URL or relative path to the image
+   */
+  loadImageFromPath(imagePath) {
+    this.currentImagePath = imagePath;
+    this.currentVideoPath = null;
+    
+    if (this.videoAssetSelect) {
+      this.videoAssetSelect.value = imagePath;
+    }
+    
+    this.cleanupPreviousVideo();
+    this.hideOverlays();
+    
+    // Determine image URL (absolute or file:// for local paths)
+    let imageUrl = imagePath;
+    if (!imagePath.startsWith('http://') && !imagePath.startsWith('https://') && !imagePath.startsWith('/')) {
+      imageUrl = 'file:///' + imagePath.replace(/\\/g, '/');
+    }
+    
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      imageUrl,
+      (texture) => {
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        this.material.uniforms.uTexture.value = texture;
+        this.material.uniforms.uHasTexture.value = 1.0;
+        this.material.uniforms.uIsImageTexture.value = 1.0;
+        
+        if (this.updateLEDShaders) {
+          this.updateLEDShaders(this.ledsGroup, this.material);
+        }
+        
+        if (this.overlayImage) {
+          this.overlayImage.src = imageUrl;
+          this.overlayImage.style.display = 'block';
+          this.overlayImage.onload = () => {
+            if (this.overlayImage.naturalWidth && this.overlayImage.naturalHeight) {
+              this.adjustMappingAspectRatio(this.overlayImage.naturalWidth, this.overlayImage.naturalHeight);
+            }
+          };
+        }
+        if (this.overlayVideo) {
+          this.overlayVideo.style.display = 'none';
+        }
+        
+        if (this.frameInfo) this.frameInfo.classList.remove('active');
+        if (this.timelineContainer) this.timelineContainer.classList.remove('active');
+        
+        if (this.updateStillInfo) {
+          this.updateStillInfo({ name: imagePath.split('/').pop() || imagePath });
+        }
+        
+        if (this.playbackControls && this.playbackControls.playbackMenu) {
+          this.playbackControls.playbackMenu.style.display = 'none';
+        }
+        
+        if (this.showMappingCheckbox && this.showMappingCheckbox.checked && this.mapping) {
+          this.mapping.classList.add('active');
+        }
+        
+        if (this.updatePlaybackButtons) {
+          this.updatePlaybackButtons();
+        }
+        
+        if (this.textureStatus) {
+          const fileName = imagePath.split('/').pop() || imagePath;
+          this.textureStatus.textContent = `Loaded: ${fileName}`;
+          this.textureStatus.classList.add('loaded');
+        }
+      },
+      undefined,
+      (error) => {
+        if (this.textureStatus) {
+          this.textureStatus.textContent = 'Error loading texture';
+          this.textureStatus.classList.remove('loaded');
+        }
+        console.error('Error loading texture from path:', imagePath, error);
+      }
+    );
+  }
+  
+  /**
    * Load NDI stream
    * Uses NDI Webcam Input (via browser getUserMedia) for lowest latency
    * Falls back to WebSocket method if direct camera access fails

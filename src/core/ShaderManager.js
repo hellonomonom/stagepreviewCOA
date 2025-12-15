@@ -116,7 +116,15 @@ export function createLEDShaderMaterial(textureMaterial, mappingType = null, isG
   // - For mapping types B and D, only on garage meshes
   // - For renderOption1/renderOption1NoFront, ONLY on garage meshes from Garagefix mesh (not regular Projection)
   const isGaragefixMesh = meshPath && meshPath.includes('Garagefix');
-  const useMask = isGarageMesh && (
+  // Read overlap mask toggle from UI (if available)
+  let isMaskEnabled = true;
+  if (typeof document !== 'undefined') {
+    const overlapMaskCheckbox = document.getElementById('enableOverlapMask');
+    if (overlapMaskCheckbox) {
+      isMaskEnabled = overlapMaskCheckbox.checked;
+    }
+  }
+  const useMask = isMaskEnabled && isGarageMesh && (
     mappingType === 'farCamB' || 
     mappingType === 'farCamD' ||
     (isGaragefixMesh && (mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront'))
@@ -167,9 +175,14 @@ export function updateLEDShaders(ledsGroup, textureMaterial, mappingType = null)
   const textureOffsetU = textureMaterial.uniforms.uTextureOffsetU.value;
   const textureOffsetV = textureMaterial.uniforms.uTextureOffsetV.value;
   
-  // Check if mapping type requires mask (B, D, or renderOption1/renderOption1NoFront with Garagefix)
-  const mappingRequiresMask = mappingType === 'farCamB' || mappingType === 'farCamD' ||
-                               mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront';
+  // Read overlap mask toggle from UI (if available)
+  let isMaskEnabled = true;
+  if (typeof document !== 'undefined') {
+    const overlapMaskCheckbox = document.getElementById('enableOverlapMask');
+    if (overlapMaskCheckbox) {
+      isMaskEnabled = overlapMaskCheckbox.checked;
+    }
+  }
   
   ledsGroup.traverse((child) => {
     if (child.isMesh && child.material && child.material.uniforms) {
@@ -223,7 +236,7 @@ export function updateLEDShaders(ledsGroup, textureMaterial, mappingType = null)
         // Apply mask if:
         // - Mapping type is B or D and it's a garage mesh
         // - Mapping type is renderOption1/renderOption1NoFront and it's a garage mesh from Garagefix
-        const useMask = isGarageMesh && (
+        const useMask = isMaskEnabled && isGarageMesh && (
           mappingType === 'farCamB' || mappingType === 'farCamD' ||
           (isGaragefixMesh && (mappingType === 'renderOption1' || mappingType === 'renderOption1NoFront'))
         );

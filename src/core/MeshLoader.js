@@ -229,6 +229,20 @@ export class MeshLoader {
           return;
         }
         
+        // Handle non-Artist meshes in CrowdStage.glb - assign marble shader
+        if (path.includes('CrowdStage')) {
+          const marbleMaterial = this.shaderMaterials.marble.clone();
+          child.material = marbleMaterial;
+          
+          // Store reference for UI control
+          if (!this.materialReferences.marble) {
+            this.materialReferences.marble = [];
+          }
+          this.materialReferences.marble.push(marbleMaterial);
+          console.log(`[MeshLoader] Applied marble shader to CrowdStage mesh: ${child.name}`);
+          return;
+        }
+        
         // Handle meshes starting with "E" in DJDeck GLBs - assign marble shader
         if ((path.includes('DJDeck_Down') || path.includes('DJDeck_Elevated') || 
              path.includes('DJ_Deck_Down') || path.includes('DJ_Deck_Elevated')) &&
