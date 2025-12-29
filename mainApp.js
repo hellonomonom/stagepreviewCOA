@@ -727,6 +727,66 @@ function initializeNDIUI() {
         }
       }
       
+      // Explicitly clean up NDI stream before switching to texture mode
+      if (mediaManager) {
+        // Clean up NDI WebSocket if open
+        if (mediaManager.ndiWebSocket) {
+          try {
+            mediaManager.ndiWebSocket.send(JSON.stringify({ type: 'disconnect' }));
+            mediaManager.ndiWebSocket.close();
+          } catch (e) {
+            console.warn('Error closing NDI WebSocket:', e);
+          }
+          mediaManager.ndiWebSocket = null;
+        }
+        
+        // Clean up NDI stream and video (this will stop tracks and clear video element)
+        mediaManager.cleanupPreviousVideo();
+        
+        // Clear NDI-related state
+        mediaManager.currentNDIStream = null;
+        mediaManager.currentNDICameraName = null;
+        
+        // Check if current video path is NDI and clear it
+        if (mediaManager.currentVideoPath && mediaManager.currentVideoPath.startsWith('NDI:')) {
+          mediaManager.currentVideoPath = null;
+        }
+        
+        // Clear texture and update LED shaders to ensure clean state
+        // This ensures the LED mesh texture is reset before loading new content
+        if (mediaManager.material) {
+          const oldTexture = mediaManager.material.uniforms.uTexture.value;
+          if (oldTexture) {
+            // Dispose old texture if it's a VideoTexture or CanvasTexture from NDI
+            // Only dispose textures that are likely from NDI (VideoTexture with srcObject or CanvasTexture)
+            if (oldTexture instanceof THREE.CanvasTexture) {
+              // CanvasTexture is used for NDI WebSocket fallback
+              oldTexture.dispose();
+            } else if (oldTexture instanceof THREE.VideoTexture) {
+              // Check if this is an NDI video texture (has srcObject)
+              const video = oldTexture.image;
+              if (video && video.srcObject) {
+                // This is likely an NDI stream, dispose it
+                oldTexture.dispose();
+              }
+            }
+          }
+          // Clear texture reference
+          mediaManager.material.uniforms.uTexture.value = null;
+          mediaManager.material.uniforms.uHasTexture.value = 0.0;
+          mediaManager.material.needsUpdate = true;
+          
+          // Update LED shaders to clear texture - this is critical to update the mesh
+          if (mediaManager.updateLEDShaders) {
+            mediaManager.updateLEDShaders(mediaManager.ledsGroup, mediaManager.material);
+          }
+        }
+      }
+      
+      // Reset NDI stream name
+      currentNdiStreamName = null;
+      updateNdiFileInfo(null);
+      
       // Restore last selected video asset or load default
       if (videoAssetSelect && lastSelectedVideoAsset) {
         videoAssetSelect.value = lastSelectedVideoAsset;
