@@ -72,8 +72,10 @@ export class CameraControls {
     
     const preset = cameraPositions[positionIndex];
     
-    // Set camera position
-    this.camera.position.set(preset.position.x, preset.position.y, preset.position.z);
+    // Set camera position (ensure minimum height of 1.2m above ground)
+    const minHeight = 1.2;
+    const cameraY = Math.max(preset.position.y, minHeight);
+    this.camera.position.set(preset.position.x, cameraY, preset.position.z);
     
     // Set OrbitControls target
     this.controls.target.set(preset.target.x, preset.target.y, preset.target.z);
@@ -192,10 +194,12 @@ Target: (${target.x}, ${target.y}, ${target.z})`;
       return;
     }
     
-    // Set camera position
+    // Set camera position (ensure minimum height of 1.2m above ground)
+    const minHeight = 1.2;
+    const cameraY = Math.max(this.storedCameraState.position.y, minHeight);
     this.camera.position.set(
       this.storedCameraState.position.x,
-      this.storedCameraState.position.y,
+      cameraY,
       this.storedCameraState.position.z
     );
     

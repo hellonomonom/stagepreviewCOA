@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Stage Preview COA</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="/styles.css">
     
     <!-- Favicons -->
@@ -36,7 +37,7 @@
                     <button class="tab-button" id="mappingTabBtn" data-tab="mapping">Mapping</button>
                     <button class="tab-button" id="stageTabBtn" data-tab="stage">Stage</button>
                     <button class="tab-button" id="cameraTabBtn" data-tab="camera">Camera</button>
-                    <button class="tab-button" id="devTabBtn" data-tab="dev" style="display: none;">Dev</button>
+                    <button class="tab-button hidden" id="devTabBtn" data-tab="dev">Dev</button>
                 </div>
                 <div class="tab-content">
                     <!-- Media Tab Content -->
@@ -77,7 +78,7 @@
                         <div class="control-group">
                             <div class="checkbox-wrapper" style="display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;">
                                 <div style="display: flex; align-items: center; gap: var(--space-sm);">
-                                    <input type="checkbox" id="showFileInfo" checked>
+                                    <input type="checkbox" id="showFileInfo">
                                     <label for="showFileInfo" class="label-inline">Show source info</label>
                                 </div>
                                 <div id="fileInfoSizeWrapper" style="display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 200px;">
@@ -228,16 +229,16 @@
                         </div>
                         <div class="control-group">
                             <label for="crowdInstanceCountSlider" class="label">
-                                Crowd Instances: <span class="value" id="crowdInstanceCountValue">4000</span>
+                                Crowd Instances: <span class="value" id="crowdInstanceCountValue">5000</span>
                             </label>
                             <input 
                                 type="range" 
                                 id="crowdInstanceCountSlider" 
                                 class="slider" 
                                 min="0" 
-                                max="5000" 
+                                max="10000" 
                                 step="1" 
-                                value="4000"
+                                value="5000"
                             />
                         </div>
                     </div>
@@ -265,8 +266,8 @@
                             <div class="camera-position-buttons">
                                 <button class="camera-position-btn" id="cameraPos1">Home</button>
                                 <button class="camera-position-btn" id="cameraPos2">Crowd</button>
-                                <button class="camera-position-btn" id="cameraPos3">Projection close (5.5:1)</button>
-                                <button class="camera-position-btn" id="cameraPos4">Projection far (5:1)</button>
+                                <button class="camera-position-btn" id="cameraPos3">CAM A</button>
+                                <button class="camera-position-btn" id="cameraPos4">CAM B</button>
                             </div>
                         </div>
                         <div class="control-group">
@@ -305,11 +306,17 @@
                     </div>
 
                     <!-- Dev Tab Content -->
-                    <div class="tab-panel" id="devTabPanel" style="display: none;">
+                    <div class="tab-panel" id="devTabPanel">
                         <div class="control-group">
                             <div class="checkbox-wrapper">
                                 <input type="checkbox" id="showStyleShaderPanel">
                                 <label for="showStyleShaderPanel" class="label-inline">Show Style & Shaders Panel</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="showFpsCounter">
+                                <label for="showFpsCounter" class="label-inline">Show FPS Counter</label>
                             </div>
                         </div>
                         <div class="text-sm" id="versionInfo" style="font-family: var(--font-family-mono); line-height: 1.6; margin-top: var(--space-xl); word-wrap: break-word; white-space: pre-line;">-</div>
@@ -318,6 +325,11 @@
             </div>
         </div>
     </div>
+
+    <!-- Dev Mode Toggle Button (top left) -->
+    <button class="dev-mode-toggle" id="devModeToggle" aria-label="Toggle Dev Mode" title="Toggle Dev Mode">
+        <span class="material-symbols-outlined">logo_dev</span>
+    </button>
 
     <!-- Settings Panel Burger Menu (shows when panel is minimized) -->
     <button class="settings-panel-burger" id="settingsPanelBurger" aria-label="Open Settings">
@@ -478,6 +490,11 @@
         <button class="playback-menu-toggle" id="playbackMenuToggle" aria-label="Minimize/Maximize">−</button>
         <div class="playback-menu-content">
             
+            <!-- Video Filename Display -->
+            <div class="playback-filename-container">
+                <span id="playbackFileNameDisplay" class="playback-filename"></span>
+            </div>
+            
             <!-- Timeline Slider -->
             <div class="timeline-container" id="timelineContainer">
                 <span id="timeDisplay" class="timeline-time timeline-time-left">00:00</span>
@@ -545,6 +562,9 @@
         <div class="debug-label">NDI Debug (First Stream)</div>
         <video id="debugVideo" muted playsinline autoplay></video>
     </div>
+
+    <!-- FPS Counter (Top Left) -->
+    <div class="fps-counter hidden" id="fpsCounter">FPS: --</div>
     <script type="module" src="/main.js"></script>
 </body>
 </html>

@@ -9,6 +9,8 @@ export class FileInfoManager {
     
     // DOM Elements
     this.fileNameDisplay = document.getElementById('fileNameDisplay');
+    this.playbackFileNameDisplay = document.getElementById('playbackFileNameDisplay');
+    this.playbackFilenameContainer = document.querySelector('.playback-filename-container');
     this.frameCountDisplay = document.getElementById('frameCountDisplay');
     this.timeDisplay = document.getElementById('timeDisplay');
     this.totalTimeDisplay = document.getElementById('totalTimeDisplay');
@@ -124,6 +126,14 @@ export class FileInfoManager {
     if (this.fileNameDisplay) {
       this.fileNameDisplay.textContent = fileName;
     }
+    // Update playback menu filename display (for still images, just show filename)
+    if (this.playbackFileNameDisplay) {
+      this.playbackFileNameDisplay.textContent = fileName;
+    }
+    // Hide playback filename container for still images
+    if (this.playbackFilenameContainer) {
+      this.playbackFilenameContainer.classList.remove('active');
+    }
     
     // Hide frame count and separator for still images
     if (this.frameCountDisplay) {
@@ -165,19 +175,13 @@ export class FileInfoManager {
     const codec = isNDI ? '' : this.getVideoCodec(video, videoPath);
     
     if (!video || !isFinite(video.duration) || video.duration === 0) {
+      // Hide frame count display
       if (this.frameCountDisplay) {
-        if (isNDI) {
-          // Hide frame count for NDI streams
-          this.frameCountDisplay.style.display = 'none';
-        } else {
-          // Show frame count for regular videos/images
-          this.frameCountDisplay.style.display = '';
-          this.frameCountDisplay.textContent = 'Frame: 0 / 0';
-        }
+        this.frameCountDisplay.style.display = 'none';
       }
-      // Hide/show separator based on NDI
+      // Hide separator
       if (this.frameInfoSeparator) {
-        this.frameInfoSeparator.style.display = isNDI ? 'none' : '';
+        this.frameInfoSeparator.style.display = 'none';
       }
       if (this.frameInfo) {
         if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
@@ -190,16 +194,43 @@ export class FileInfoManager {
         if (isNDI) {
           this.fileNameDisplay.textContent = 'NDI STREAM';
         } else {
-          const suffix = codec ? ` (${codec})` : '';
+          const frameRate = this.mediaManager ? this.mediaManager.getVideoFrameRate() : 30;
+          const fpsText = `${frameRate}fps`;
+          let suffix = '';
+          if (codec) {
+            suffix = ` (${codec} | ${fpsText})`;
+          } else if (frameRate) {
+            suffix = ` (${fpsText})`;
+          }
           this.fileNameDisplay.textContent = fileName ? `${fileName}${suffix}` : '';
         }
+      }
+      // Update playback menu filename display
+      if (this.playbackFileNameDisplay) {
+        if (isNDI) {
+          this.playbackFileNameDisplay.textContent = 'NDI STREAM';
+        } else {
+          const frameRate = this.mediaManager ? this.mediaManager.getVideoFrameRate() : 30;
+          const fpsText = `${frameRate}fps`;
+          let suffix = '';
+          if (codec) {
+            suffix = ` (${codec} | ${fpsText})`;
+          } else if (frameRate) {
+            suffix = ` (${fpsText})`;
+          }
+          this.playbackFileNameDisplay.textContent = fileName ? `${fileName}${suffix}` : '';
+        }
+      }
+      // Show playback filename container
+      if (this.playbackFilenameContainer) {
+        this.playbackFilenameContainer.classList.add('active');
       }
       if (this.timeDisplay) {
         if (isNDI) {
           this.timeDisplay.style.display = 'none';
         } else {
           this.timeDisplay.style.display = '';
-          this.timeDisplay.textContent = '00:00';
+          this.timeDisplay.textContent = '0000 | 00:00';
         }
       }
       if (this.totalTimeDisplay) {
@@ -207,7 +238,7 @@ export class FileInfoManager {
           this.totalTimeDisplay.style.display = 'none';
         } else {
           this.totalTimeDisplay.style.display = '';
-          this.totalTimeDisplay.textContent = '00:00';
+          this.totalTimeDisplay.textContent = '0000 | 00:00';
         }
       }
       return;
@@ -219,30 +250,49 @@ export class FileInfoManager {
     const currentFrame = Math.floor(currentTime * frameRate);
     const totalFrames = Math.floor(duration * frameRate);
     
-    // Update filename display with codec info
+    // Update filename display with codec info and FPS
     if (this.fileNameDisplay) {
       if (isNDI) {
         this.fileNameDisplay.textContent = 'NDI STREAM';
       } else {
-        const suffix = codec ? ` (${codec})` : '';
+        const fpsText = `${frameRate}fps`;
+        let suffix = '';
+        if (codec) {
+          suffix = ` (${codec} | ${fpsText})`;
+        } else if (frameRate) {
+          suffix = ` (${fpsText})`;
+        }
         this.fileNameDisplay.textContent = `${fileName}${suffix}`;
       }
     }
+    // Update playback menu filename display
+    if (this.playbackFileNameDisplay) {
+      if (isNDI) {
+        this.playbackFileNameDisplay.textContent = 'NDI STREAM';
+      } else {
+        const fpsText = `${frameRate}fps`;
+        let suffix = '';
+        if (codec) {
+          suffix = ` (${codec} | ${fpsText})`;
+        } else if (frameRate) {
+          suffix = ` (${fpsText})`;
+        }
+        this.playbackFileNameDisplay.textContent = `${fileName}${suffix}`;
+      }
+    }
+    // Show playback filename container
+    if (this.playbackFilenameContainer) {
+      this.playbackFilenameContainer.classList.add('active');
+    }
     
     if (this.frameInfo) {
+      // Hide frame count display
       if (this.frameCountDisplay) {
-        if (isNDI) {
-          // Hide frame count for NDI streams
-          this.frameCountDisplay.style.display = 'none';
-        } else {
-          // Show frame count for regular videos
-          this.frameCountDisplay.style.display = '';
-          this.frameCountDisplay.textContent = `Frame: ${currentFrame} / ${totalFrames}`;
-        }
+        this.frameCountDisplay.style.display = 'none';
       }
-      // Hide/show separator based on NDI
+      // Hide separator
       if (this.frameInfoSeparator) {
-        this.frameInfoSeparator.style.display = isNDI ? 'none' : '';
+        this.frameInfoSeparator.style.display = 'none';
       }
       if (this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
         this.frameInfo.classList.add('active');
@@ -251,7 +301,7 @@ export class FileInfoManager {
       }
     }
     
-    // Update current time display (format as mm:ss)
+    // Update current time display (format as frame | mm:ss)
     if (this.timeDisplay) {
       if (isNDI) {
         // Hide time display for NDI streams
@@ -259,11 +309,13 @@ export class FileInfoManager {
       } else {
         // Show time display for regular videos
         this.timeDisplay.style.display = '';
-        this.timeDisplay.textContent = this.formatTime(currentTime);
+        const frameNumber = String(currentFrame).padStart(4, '0');
+        const timeString = this.formatTime(currentTime);
+        this.timeDisplay.textContent = `${frameNumber} | ${timeString}`;
       }
     }
     
-    // Update total time display (format as mm:ss)
+    // Update total time display (format as frame | mm:ss)
     if (this.totalTimeDisplay) {
       if (isNDI) {
         // Hide total time display for NDI streams
@@ -271,7 +323,9 @@ export class FileInfoManager {
       } else {
         // Show total time display for regular videos
         this.totalTimeDisplay.style.display = '';
-        this.totalTimeDisplay.textContent = this.formatTime(duration);
+        const totalFrameNumber = String(totalFrames).padStart(4, '0');
+        const durationString = this.formatTime(duration);
+        this.totalTimeDisplay.textContent = `${totalFrameNumber} | ${durationString}`;
       }
     }
     
@@ -290,12 +344,24 @@ export class FileInfoManager {
     if (this.fileNameDisplay) {
       this.fileNameDisplay.textContent = streamName ? 'NDI STREAM' : '';
     }
-    if (this.frameCountDisplay) {
-      this.frameCountDisplay.textContent = streamName ? 'Frame: --' : 'Frame: 0 / 0';
+    if (this.playbackFileNameDisplay) {
+      this.playbackFileNameDisplay.textContent = streamName ? 'NDI STREAM' : '';
     }
-    // Hide separator for NDI
+    // Show/hide playback filename container based on stream
+    if (this.playbackFilenameContainer) {
+      if (streamName) {
+        this.playbackFilenameContainer.classList.add('active');
+      } else {
+        this.playbackFilenameContainer.classList.remove('active');
+      }
+    }
+    // Hide frame count display
+    if (this.frameCountDisplay) {
+      this.frameCountDisplay.style.display = 'none';
+    }
+    // Hide separator
     if (this.frameInfoSeparator) {
-      this.frameInfoSeparator.style.display = streamName ? 'none' : '';
+      this.frameInfoSeparator.style.display = 'none';
     }
     if (this.frameInfo) {
       if (streamName && this.showFileInfoCheckbox && this.showFileInfoCheckbox.checked) {
@@ -314,11 +380,22 @@ export class FileInfoManager {
     if (this.fileNameDisplay) {
       this.fileNameDisplay.textContent = cameraName ? 'NDI STREAM' : '';
     }
-    // Hide frame count for NDI
+    if (this.playbackFileNameDisplay) {
+      this.playbackFileNameDisplay.textContent = cameraName ? 'NDI STREAM' : '';
+    }
+    // Show/hide playback filename container based on camera
+    if (this.playbackFilenameContainer) {
+      if (cameraName) {
+        this.playbackFilenameContainer.classList.add('active');
+      } else {
+        this.playbackFilenameContainer.classList.remove('active');
+      }
+    }
+    // Hide frame count display
     if (this.frameCountDisplay) {
       this.frameCountDisplay.style.display = 'none';
     }
-    // Hide separator for NDI
+    // Hide separator
     if (this.frameInfoSeparator) {
       this.frameInfoSeparator.style.display = 'none';
     }

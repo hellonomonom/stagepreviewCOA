@@ -4,6 +4,7 @@
  */
 
 import { getElement, on, setText } from '../utils/domUtils.js';
+import { debugLog, debugWarn } from '../utils/logger.js';
 
 export class ShaderControls {
   constructor(shaderMaterials, materialReferences, updateShaderUniformsFn, syncControlsToShaderValuesFn) {
@@ -11,6 +12,17 @@ export class ShaderControls {
     this.materialReferences = materialReferences;
     this.updateShaderUniforms = updateShaderUniformsFn;
     this.syncControlsToShaderValues = syncControlsToShaderValuesFn;
+
+    this._missingControlsWarned = new Set();
+  }
+
+  hasShaderTypeControls(shaderType) {
+    // If the core RGB sliders exist, we consider this shader type supported by the current UI.
+    return !!(
+      getElement(`${shaderType}ColorR`) &&
+      getElement(`${shaderType}ColorG`) &&
+      getElement(`${shaderType}ColorB`)
+    );
   }
   
   /**
@@ -53,7 +65,7 @@ export class ShaderControls {
     const specularSlider = getElement(`${shaderType}Specular`);
     
     if (!colorR || !colorG || !colorB) {
-      console.warn(`Missing color controls for shader type: ${shaderType}`);
+      // UI does not expose this shader type; silently skip.
       return;
     }
     
@@ -128,7 +140,8 @@ export class ShaderControls {
     const specularSlider = getElement(`${shaderType}Specular`);
     
     if (!colorR || !colorG || !colorB || !roughnessSlider || !specularSlider) {
-      console.error(`Could not find controls for shader type: ${shaderType}`);
+      // Not fatal; UI might not include all shader types in some layouts
+      debugWarn('logging.shaderControls.missingControlsWarn', `Could not find controls for shader type: ${shaderType}`);
       return;
     }
     
@@ -145,12 +158,12 @@ export class ShaderControls {
 }`;
     
     navigator.clipboard.writeText(valuesString).then(() => {
-      console.log(`Copied ${shaderType} shader values to clipboard:`);
-      console.log(valuesString);
+      debugLog('logging.shaderControls.verbose', `Copied ${shaderType} shader values to clipboard:`);
+      debugLog('logging.shaderControls.verbose', valuesString);
       alert(`Copied ${shaderType} shader values to clipboard!`);
     }).catch(err => {
       console.error('Failed to copy:', err);
-      console.log(`\n${shaderType} shader values:\n${valuesString}`);
+      debugLog('logging.shaderControls.verbose', `\n${shaderType} shader values:\n${valuesString}`);
       prompt('Copy these values:', valuesString);
     });
   }
@@ -196,12 +209,12 @@ export class ShaderControls {
     });
     
     navigator.clipboard.writeText(valuesString).then(() => {
-      console.log('Copied all shader values to clipboard:');
-      console.log(valuesString);
+      debugLog('logging.shaderControls.verbose', 'Copied all shader values to clipboard:');
+      debugLog('logging.shaderControls.verbose', valuesString);
       alert('Copied all shader values to clipboard!');
     }).catch(err => {
       console.error('Failed to copy:', err);
-      console.log('\nAll shader values:\n' + valuesString);
+      debugLog('logging.shaderControls.verbose', '\nAll shader values:\n' + valuesString);
       prompt('Copy these values:', valuesString);
     });
   }
@@ -210,14 +223,14 @@ export class ShaderControls {
    * Initialize all shader controls
    */
   init() {
-    console.log('Initializing shader controls...');
-    console.log('Material references:', this.materialReferences);
+    debugLog('logging.shaderControls.verbose', 'Initializing shader controls...');
+    debugLog('logging.shaderControls.verbose', 'Material references:', this.materialReferences);
     
     // Initialize controls for each shader type
     const shaderTypes = ['artists', 'base', 'stage', 'pillars', 'floor', 'roof', 'crowd', 'marble', 'cables'];
-    shaderTypes.forEach(shaderType => {
-      this.initShaderTypeControls(shaderType);
-    });
+    shaderTypes
+      .filter((shaderType) => this.hasShaderTypeControls(shaderType))
+      .forEach((shaderType) => this.initShaderTypeControls(shaderType));
     
     // Wire up copy buttons
     const copyButtons = {

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { getShaderType } from '../utils/shaderUtils.js';
 import { createLEDShaderMaterial } from './ShaderManager.js';
+import { debugLog } from '../utils/logger.js';
 
 export class MeshLoader {
   constructor(scene, shaderMaterials, materialReferences, createLEDShaderMaterialFn) {
@@ -52,6 +53,17 @@ export class MeshLoader {
       (gltf) => {
         const model = gltf.scene;
         model.userData.path = path; // Store path for identification
+        
+        // Ensure mesh is visible immediately when added (to prevent black screen during transitions)
+        if (model.traverse) {
+          model.traverse((child) => {
+            if (child.isMesh) {
+              child.visible = true;
+            }
+          });
+        }
+        model.visible = true;
+        
         targetGroup.add(model);
         
         if (!isStage && targetGroup.name === 'LEDs') {
@@ -61,14 +73,13 @@ export class MeshLoader {
           // Handle stage meshes
           this.handleStageMesh(model, path);
         }
-        
-        console.log(`Loaded mesh: ${path}`);
+        debugLog('logging.meshLoader.loaded', `Loaded mesh: ${path}`);
       },
       (progress) => {
         // Loading progress (optional)
         if (progress.lengthComputable) {
           const percentComplete = (progress.loaded / progress.total) * 100;
-          console.log(`Loading ${path}: ${percentComplete.toFixed(0)}%`);
+          debugLog('logging.meshLoader.progress', `Loading ${path}: ${percentComplete.toFixed(0)}%`);
         }
       },
       (error) => {
@@ -103,7 +114,7 @@ export class MeshLoader {
           // Found front mesh inside the GLB - call the callback
           if (this.meshCallbacks.onLEDFrontLoaded) {
             this.meshCallbacks.onLEDFrontLoaded(child);
-            console.log('[MeshLoader] Found front mesh in renderOption1 GLB:', child.name);
+            debugLog('logging.meshLoader.ledFrontDiscovery', '[MeshLoader] Found front mesh in renderOption1 GLB:', child.name);
           }
         }
       });
@@ -209,7 +220,7 @@ export class MeshLoader {
     const shaderMaterial = this.shaderMaterials[shaderType];
     
     if (!shaderMaterial) {
-      console.warn(`No shader material found for type: ${shaderType}`);
+      debugLog('logging.meshLoader.loaded', `No shader material found for type: ${shaderType}`);
       return;
     }
     
@@ -225,7 +236,7 @@ export class MeshLoader {
             this.materialReferences.artists = [];
           }
           this.materialReferences.artists.push(artistsMaterial);
-          console.log(`[MeshLoader] Applied artists shader to Artist mesh: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied artists shader to Artist mesh: ${child.name}`);
           return;
         }
         
@@ -239,7 +250,7 @@ export class MeshLoader {
             this.materialReferences.marble = [];
           }
           this.materialReferences.marble.push(marbleMaterial);
-          console.log(`[MeshLoader] Applied marble shader to CrowdStage mesh: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied marble shader to CrowdStage mesh: ${child.name}`);
           return;
         }
         
@@ -255,7 +266,7 @@ export class MeshLoader {
             this.materialReferences.marble = [];
           }
           this.materialReferences.marble.push(marbleMaterial);
-          console.log(`[MeshLoader] Applied marble shader to mesh starting with E: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied marble shader to mesh starting with E: ${child.name}`);
           return;
         }
         
@@ -269,7 +280,7 @@ export class MeshLoader {
             this.materialReferences.marble = [];
           }
           this.materialReferences.marble.push(marbleMaterial);
-          console.log(`[MeshLoader] Applied marble shader to Extrusionk mesh: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied marble shader to Extrusionk mesh: ${child.name}`);
           return;
         }
         
@@ -284,7 +295,7 @@ export class MeshLoader {
             this.materialReferences.cables = [];
           }
           this.materialReferences.cables.push(cablesMaterial);
-          console.log(`[MeshLoader] Applied cables shader to cables mesh: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied cables shader to cables mesh: ${child.name}`);
           return;
         }
         
@@ -298,7 +309,7 @@ export class MeshLoader {
             this.materialReferences.marble = [];
           }
           this.materialReferences.marble.push(marbleMaterial);
-          console.log(`[MeshLoader] Applied marble shader to Platform_fixed mesh: ${child.name}`);
+          debugLog('logging.meshLoader.loaded', `[MeshLoader] Applied marble shader to Platform_fixed mesh: ${child.name}`);
           return;
         }
         

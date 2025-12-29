@@ -4,8 +4,13 @@ import os from 'os';
 import fs from 'fs';
 import { execSync } from 'child_process';
 
-// Read package.json for version
-const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
+// Function to read package.json dynamically (ensures we always get the latest version)
+function getPackageJson() {
+  return JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
+}
+
+// Read package.json for version (will be re-read by plugin)
+const packageJson = getPackageJson();
 
 // Get git commit hash (if available)
 function getGitCommitHash() {
@@ -90,9 +95,21 @@ export default defineConfig({
           }
         });
       }
+    },
+    {
+      name: 'inject-version-dynamic',
+      configResolved(config) {
+        // Read package.json fresh when config is resolved to ensure latest version
+        // This ensures the version is always up-to-date when the dev server restarts
+        const pkg = getPackageJson();
+        if (config.define) {
+          config.define.__APP_VERSION__ = JSON.stringify(pkg.version);
+        }
+      }
     }
   ],
   define: {
+    // These will be updated by the plugin, but set initial values
     __APP_VERSION__: JSON.stringify(packageJson.version),
     __BUILD_TIME__: JSON.stringify(buildTimestamp),
     __GIT_COMMIT__: JSON.stringify(getGitCommitHash()),

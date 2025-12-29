@@ -11,10 +11,22 @@ export const pbrVertexShader = `
   
   void main() {
     vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
     vPosition = position;
-    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+    // Instancing support (THREE.InstancedMesh):
+    // - Apply instanceMatrix to position
+    // - Apply instanceMatrix to normal (approx; matches Three.js default pattern)
+    #ifdef USE_INSTANCING
+      vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+      vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    #else
+      vNormal = normalize(normalMatrix * normal);
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    #endif
   }
 `;
 

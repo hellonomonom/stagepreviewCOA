@@ -33,7 +33,7 @@ export class InitializationManager {
    * @param {Object} step - Initialization step
    * @returns {boolean} True if all dependencies are ready
    */
-  async areDependenciesReady(step) {
+  areDependenciesReady(step) {
     // Check initialization dependencies
     for (const dep of step.dependsOn) {
       if (!this.initialized.has(dep)) {
@@ -43,11 +43,13 @@ export class InitializationManager {
 
     // Check loading state dependencies
     if (step.loadingStates.length > 0) {
-      try {
-        await this.loadingManager.waitForAll(step.loadingStates, 30000);
-      } catch (error) {
-        console.error(`InitializationManager: Loading states not ready for '${step.name}':`, error);
-        return false;
+      for (const stateKey of step.loadingStates) {
+        if (!this.loadingManager.isLoaded(stateKey)) {
+          return false;
+        }
+        if (this.loadingManager.getError(stateKey)) {
+          return false;
+        }
       }
     }
 
@@ -66,7 +68,7 @@ export class InitializationManager {
     // Wait for dependencies
     const maxRetries = 60; // 60 seconds max wait
     let retries = 0;
-    while (!(await this.areDependenciesReady(step)) && retries < maxRetries) {
+    while (!this.areDependenciesReady(step) && retries < maxRetries) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       retries++;
     }
@@ -104,27 +106,28 @@ export class InitializationManager {
     console.log(`InitializationManager: Starting initialization of ${this.initializationQueue.length} steps...`);
 
     const remaining = [...this.initializationQueue];
-    let lastRemainingCount = remaining.length;
+    const maxStallMs = 60000; // 60s max with no progress
+    let lastProgressTime = Date.now();
 
     while (remaining.length > 0) {
       // Find steps that can be initialized (all dependencies ready)
       const readySteps = [];
       for (const step of remaining) {
-        if (await this.areDependenciesReady(step)) {
+        if (this.areDependenciesReady(step)) {
           readySteps.push(step);
         }
       }
 
       if (readySteps.length === 0) {
-        // Check if we're stuck (no progress)
-        if (remaining.length === lastRemainingCount) {
+        // No step ready yet — usually we're waiting on async loading states to flip to "loaded".
+        // Only treat as a deadlock if we make no progress for a long time.
+        if (Date.now() - lastProgressTime > maxStallMs) {
           const stuckSteps = remaining.map(s => s.name);
           throw new Error(
-            `InitializationManager: Circular dependency or missing dependencies detected. ` +
-            `Stuck steps: ${stuckSteps.join(', ')}`
+            `InitializationManager: Timeout waiting for steps to become ready. ` +
+            `Still pending: ${stuckSteps.join(', ')}`
           );
         }
-        lastRemainingCount = remaining.length;
 
         // Wait a bit and retry
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -142,6 +145,8 @@ export class InitializationManager {
           remaining.splice(index, 1);
         }
       });
+
+      lastProgressTime = Date.now();
     }
 
     console.log(`InitializationManager: All steps initialized. Order: ${this.initializationOrder.join(' -> ')}`);

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { crowdMeshPaths } from '../config/meshPaths.js';
+import { debugLog } from '../utils/logger.js';
 
 export class CrowdSpawner {
   constructor(scene, floorMesh, shaderMaterials, materialReferences = null) {
@@ -16,14 +17,16 @@ export class CrowdSpawner {
     this.gltfLoader = new GLTFLoader();
     
     // Crowd mesh data
-    this.crowdMeshData = []; // Array of {geometry} objects (materials are applied from shaderMaterials)
+    this.crowdMeshData = []; // Array of { geometry, bboxMinY } objects (materials come from shaderMaterials)
     this.crowdMeshes = []; // Array to store individual meshes
-    this.crowdInstances = null;
+    // New: instanced crowd
+    this.crowdInstancesGroup = null; // THREE.Group containing instanced meshes
+    this.crowdInstancedMeshes = []; // Array<THREE.InstancedMesh>
     
     // Spawn area mesh for position sampling
     this.spawnAreaMesh = null;
     this.spawnAreaPositions = []; // Cached positions sampled from spawn area
-    this.cachedSpawnPositions = null; // Cached 5000 positions from file/localStorage
+    this.cachedSpawnPositions = null; // Cached 10000 positions from file/localStorage
     this.usedPositionIndices = new Set(); // Track which positions have been used
   }
   
@@ -68,7 +71,7 @@ export class CrowdSpawner {
       
       if (checkPath(this.floorMesh)) {
         spawnAreaMesh = this.floorMesh;
-        console.log('[CrowdSpawner] Found SpawnArea mesh as floorMesh');
+        debugLog('logging.crowd.verbose', '[CrowdSpawner] Found SpawnArea mesh as floorMesh');
       }
     }
     
@@ -79,7 +82,7 @@ export class CrowdSpawner {
           const path = object.userData.path.toLowerCase();
           if (path.includes('spawnarea')) {
             spawnAreaMesh = object;
-            console.log('[CrowdSpawner] Found SpawnArea mesh in scene:', object);
+            debugLog('logging.crowd.verbose', '[CrowdSpawner] Found SpawnArea mesh in scene:', object);
           }
         }
       });
@@ -88,32 +91,32 @@ export class CrowdSpawner {
     if (spawnAreaMesh) {
       this.spawnAreaMesh = spawnAreaMesh;
       
-      // Sample and save 5000 positions from the spawn area mesh
+      // Sample and save 10000 positions from the spawn area mesh
       await this.sampleAndSavePositions(spawnAreaMesh);
       
-      console.log(`[CrowdSpawner] Loaded ${this.cachedSpawnPositions ? this.cachedSpawnPositions.length : 0} positions from cache/file`);
+      debugLog('logging.crowd.verbose', `[CrowdSpawner] Loaded ${this.cachedSpawnPositions ? this.cachedSpawnPositions.length : 0} positions from cache/file`);
       
       if (!this.cachedSpawnPositions || this.cachedSpawnPositions.length === 0) {
-        console.warn('[CrowdSpawner] No positions sampled from spawn area mesh. Mesh may not have geometry.');
+        debugLog('logging.crowd.verbose', '[CrowdSpawner] No positions sampled from spawn area mesh. Mesh may not have geometry.');
       }
       
       return Promise.resolve();
     } else {
-      console.warn('[CrowdSpawner] Could not find SpawnArea mesh in scene. Will use fallback positioning.');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Could not find SpawnArea mesh in scene. Will use fallback positioning.');
       return Promise.reject(new Error('SpawnArea mesh not found in scene'));
     }
   }
   
   /**
-   * Sample exactly 5000 positions from mesh and save to localStorage
+   * Sample exactly 10000 positions from mesh and save to localStorage
    * @param {THREE.Object3D} mesh - Mesh to sample from
    * @returns {Promise} Promise that resolves with the positions array
    */
   async sampleAndSavePositions(mesh) {
     // Bump storage key version to force resampling with updated spawn area
-    const STORAGE_KEY = 'crowdSpawnPositions_v3';
-    const OLD_STORAGE_KEYS = ['crowdSpawnPositions', 'crowdSpawnPositions_v2'];
-    const NUM_SAMPLES = 5000;
+    const STORAGE_KEY = 'crowdSpawnPositions_v4';
+    const OLD_STORAGE_KEYS = ['crowdSpawnPositions', 'crowdSpawnPositions_v2', 'crowdSpawnPositions_v3'];
+    const NUM_SAMPLES = 10000;
     
     // Check if positions are already cached in localStorage
     try {
@@ -122,17 +125,17 @@ export class CrowdSpawner {
       if (cached) {
         const positions = JSON.parse(cached);
         if (Array.isArray(positions) && positions.length === NUM_SAMPLES) {
-          console.log(`[CrowdSpawner] Loaded ${positions.length} cached positions from localStorage`);
+          debugLog('logging.crowd.verbose', `[CrowdSpawner] Loaded ${positions.length} cached positions from localStorage`);
           this.cachedSpawnPositions = positions;
           return positions;
         }
       }
     } catch (error) {
-      console.warn('[CrowdSpawner] Error loading cached positions:', error);
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Error loading cached positions:', error);
     }
     
     // Sample new positions
-    console.log(`[CrowdSpawner] Sampling ${NUM_SAMPLES} positions from mesh...`);
+    debugLog('logging.crowd.verbose', `[CrowdSpawner] Sampling ${NUM_SAMPLES} positions from mesh...`);
     const positions = this.samplePositionsFromMesh(mesh, NUM_SAMPLES);
     
     // Save to localStorage
@@ -146,9 +149,9 @@ export class CrowdSpawner {
           // ignore
         }
       });
-      console.log(`[CrowdSpawner] Saved ${positions.length} positions to localStorage`);
+      debugLog('logging.crowd.verbose', `[CrowdSpawner] Saved ${positions.length} positions to localStorage`);
     } catch (error) {
-      console.warn('[CrowdSpawner] Error saving positions to localStorage:', error);
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Error saving positions to localStorage:', error);
     }
     
     this.cachedSpawnPositions = positions;
@@ -158,10 +161,10 @@ export class CrowdSpawner {
   /**
    * Sample positions from a mesh by sampling random points on the surface
    * @param {THREE.Object3D} mesh - Mesh to sample from
-   * @param {number} numSamples - Number of positions to sample (default: 5000)
+   * @param {number} numSamples - Number of positions to sample (default: 10000)
    * @returns {Array} Array of {x, y, z} position objects
    */
-  samplePositionsFromMesh(mesh, numSamples = 5000) {
+  samplePositionsFromMesh(mesh, numSamples = 10000) {
     const positions = [];
     const v1 = new THREE.Vector3();
     const v2 = new THREE.Vector3();
@@ -254,7 +257,7 @@ export class CrowdSpawner {
     });
     
     if (triangles.length === 0) {
-      console.warn('[CrowdSpawner] No triangles found in spawn area mesh.');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] No triangles found in spawn area mesh.');
       return positions;
     }
     
@@ -301,7 +304,7 @@ export class CrowdSpawner {
       });
     }
     
-    console.log(`[CrowdSpawner] Sampled ${positions.length} positions from ${triangles.length} triangles (total area: ${totalArea.toFixed(2)})`);
+    debugLog('logging.crowd.verbose', `[CrowdSpawner] Sampled ${positions.length} positions from ${triangles.length} triangles (total area: ${totalArea.toFixed(2)})`);
     
     return positions;
   }
@@ -345,17 +348,22 @@ export class CrowdSpawner {
             if (foundGeometry) {
               // Clone geometry to avoid sharing issues
               const geometry = foundGeometry.clone();
+              if (!geometry.boundingBox) {
+                geometry.computeBoundingBox();
+              }
+              const bboxMinY = geometry.boundingBox ? geometry.boundingBox.min.y : 0;
               
               // Store only geometry - we'll use the crowd shader material when spawning
               this.crowdMeshData.push({
-                geometry: geometry
+                geometry: geometry,
+                bboxMinY
               });
               
-              console.log(`Loaded crowd mesh ${path}, total loaded: ${this.crowdMeshData.length}`);
+              debugLog('logging.crowd.verbose', `Loaded crowd mesh ${path}, total loaded: ${this.crowdMeshData.length}`);
             }
             
             loadedCount++;
-            console.log(`Crowd mesh loading progress: ${loadedCount}/${totalMeshes}, loaded meshes: ${this.crowdMeshData.length}`);
+            debugLog('logging.crowd.verbose', `Crowd mesh loading progress: ${loadedCount}/${totalMeshes}, loaded meshes: ${this.crowdMeshData.length}`);
             if (loadedCount === totalMeshes) {
               if (hasError && this.crowdMeshData.length === 0) {
                 reject(new Error('Failed to load any crowd meshes'));
@@ -388,7 +396,7 @@ export class CrowdSpawner {
    */
   spawnCrowdInstances(instanceCount = 100) {
     if (!this.floorMesh) {
-      console.warn('Floor mesh not available for crowd spawning');
+      debugLog('logging.crowd.verbose', 'Floor mesh not available for crowd spawning');
       return;
     }
     
@@ -397,7 +405,7 @@ export class CrowdSpawner {
       return;
     }
     
-    // Clean up existing meshes
+    // Clean up existing crowd
     this.cleanup();
     
     // Reset used positions when respawning
@@ -430,199 +438,162 @@ export class CrowdSpawner {
     const floorMax = box.max;
     const floorSize = box.getSize(new THREE.Vector3());
     
-    // Generate positions from cached spawn positions if available, otherwise use bounding box
+    // Generate spawn positions.
+    // Prefer cached spawn-area points (already on the surface, including y).
+    // Fallback to random XZ + raycast to floor for Y.
     let positions = [];
-    if (this.cachedSpawnPositions && this.cachedSpawnPositions.length > 0) {
-      // Reset used positions if we need more than available
+    const hasCached = this.cachedSpawnPositions && this.cachedSpawnPositions.length > 0;
+    if (hasCached) {
+      // Reset used positions if we exhausted the cache.
       if (this.usedPositionIndices.size >= this.cachedSpawnPositions.length) {
-        console.log('[CrowdSpawner] All positions used, resetting used positions set');
+        debugLog('logging.crowd.verbose', '[CrowdSpawner] All cached positions used, resetting used positions set');
         this.usedPositionIndices.clear();
       }
-      
-      // Get available indices (not yet used)
+
+      // Select indices (avoid duplicates until cache is exhausted).
       const availableIndices = [];
       for (let i = 0; i < this.cachedSpawnPositions.length; i++) {
-        if (!this.usedPositionIndices.has(i)) {
-          availableIndices.push(i);
-        }
+        if (!this.usedPositionIndices.has(i)) availableIndices.push(i);
       }
-      
-      // Shuffle available indices for random selection
+      // Shuffle indices for random selection
       for (let i = availableIndices.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [availableIndices[i], availableIndices[j]] = [availableIndices[j], availableIndices[i]];
       }
-      
-      // Select positions from available indices, avoiding duplicates
+
       const positionsToUse = Math.min(instanceCount, availableIndices.length);
-      console.log(`[CrowdSpawner] Selecting ${positionsToUse} unique positions from ${this.cachedSpawnPositions.length} cached positions (${availableIndices.length} available)`);
-      
       for (let i = 0; i < positionsToUse; i++) {
-        const index = availableIndices[i];
-        this.usedPositionIndices.add(index);
-        const sampledPos = this.cachedSpawnPositions[index];
-        positions.push({
-          x: sampledPos.x,
-          y: null, // Will be set based on raycast to floor
-          z: sampledPos.z
-        });
+        const idx = availableIndices[i];
+        this.usedPositionIndices.add(idx);
+        const p = this.cachedSpawnPositions[idx];
+        positions.push({ x: p.x, y: p.y, z: p.z });
       }
-      
-      // If we need more positions than available, reuse some (shuffled)
+
+      // If more requested than available unique indices, reuse randomly.
       if (instanceCount > positionsToUse) {
-        console.warn(`[CrowdSpawner] Requested ${instanceCount} positions but only ${positionsToUse} unique positions available. Reusing positions.`);
         const remaining = instanceCount - positionsToUse;
-        const shuffledIndices = Array.from({ length: this.cachedSpawnPositions.length }, (_, i) => i);
-        for (let i = shuffledIndices.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]];
-        }
         for (let i = 0; i < remaining; i++) {
-          const index = shuffledIndices[i % shuffledIndices.length];
-          const sampledPos = this.cachedSpawnPositions[index];
-          positions.push({
-            x: sampledPos.x,
-            y: null,
-            z: sampledPos.z
-          });
+          const idx = Math.floor(Math.random() * this.cachedSpawnPositions.length);
+          const p = this.cachedSpawnPositions[idx];
+          positions.push({ x: p.x, y: p.y, z: p.z });
         }
       }
-      
-      console.log(`[CrowdSpawner] Using ${positions.length} positions from cached spawn area (${positionsToUse} unique, ${instanceCount - positionsToUse} reused)`);
     } else {
-      // Fallback to bounding box method
-      console.warn('[CrowdSpawner] No spawn area positions available, using bounding box fallback');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] No cached spawn area positions available, using bounding box + raycast fallback');
       const margin = 0.1;
       for (let i = 0; i < instanceCount; i++) {
         positions.push({
           x: floorMin.x + margin + Math.random() * (floorSize.x - 2 * margin),
-          y: null, // Will be set based on raycast
+          y: null,
           z: floorMin.z + margin + Math.random() * (floorSize.z - 2 * margin)
         });
       }
-      console.log(`[CrowdSpawner] Using bounding box fallback for crowd positions`);
     }
     
     if (positions.length === 0) {
       console.error('No positions generated for crowd spawning!');
       return;
     }
-    
-    // Create raycaster for positioning meshes on floor surface
+
+    // For fallback positions without Y, raycast to floor once per position.
     const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), new THREE.PerspectiveCamera());
-    
-    // Spawn meshes at positions
-    console.log(`[CrowdSpawner] Starting to spawn ${positions.length} meshes...`);
-    let spawnedCount = 0;
-    
-    positions.forEach((pos, index) => {
-      try {
-        // Raycast to find floor surface
-        raycaster.set(
-          new THREE.Vector3(pos.x, floorMax.y + 10, pos.z),
-          new THREE.Vector3(0, -1, 0)
-        );
-        
-        const intersects = raycaster.intersectObject(this.floorMesh, true);
-        
-        // Create a temporary mesh to calculate bounding box
-        const randomMeshData = this.crowdMeshData[Math.floor(Math.random() * this.crowdMeshData.length)];
-        if (!randomMeshData || !randomMeshData.geometry) {
-          console.error(`[CrowdSpawner] Invalid mesh data at index ${index}`);
-          return;
-        }
-        
-        // Use crowd shader material for temp mesh calculation
-        const tempMaterial = this.shaderMaterials.crowd ? this.shaderMaterials.crowd.clone() : new THREE.MeshBasicMaterial({ color: 0x1e1e1e });
-        const tempMesh = new THREE.Mesh(randomMeshData.geometry, tempMaterial);
-        const meshBox = new THREE.Box3();
-        meshBox.setFromObject(tempMesh);
-        const meshMin = meshBox.min;
-        const meshSize = meshBox.getSize(new THREE.Vector3());
-        // Dispose temp mesh
-        tempMaterial.dispose();
-        
-        let yPos = floorMin.y + floorSize.y * 0.5;
-        
-        if (intersects.length > 0) {
-          // Position crowd mesh on top of the floor surface
-          yPos = intersects[0].point.y - meshMin.y;
-        } else {
-          // Fallback: use bounding box top
-          yPos = floorMin.y + floorSize.y - meshMin.y;
-        }
-        
-        // Create a new mesh with the randomly selected geometry
-        const clonedGeometry = randomMeshData.geometry.clone();
-        
-        // Ensure geometry is properly computed
-        if (!clonedGeometry.boundingBox) {
-          clonedGeometry.computeBoundingBox();
-        }
-        
-        // Use crowd shader material instead of cloned material
-        const crowdMaterial = this.shaderMaterials.crowd ? this.shaderMaterials.crowd.clone() : new THREE.MeshBasicMaterial({ color: 0x1e1e1e });
-        if (!crowdMaterial) {
-          console.error(`[CrowdSpawner] Failed to create material at index ${index}`);
-          return;
-        }
-        crowdMaterial.needsUpdate = true;
-        
-        const mesh = new THREE.Mesh(clonedGeometry, crowdMaterial);
-        if (!mesh) {
-          console.error(`[CrowdSpawner] Failed to create mesh at index ${index}`);
-          return;
-        }
-        
-        mesh.position.set(pos.x, yPos, pos.z);
-        mesh.rotation.y = -Math.PI / 2; // 90 degrees clockwise
-        mesh.name = `CrowdInstance_${index}`;
-        
-        // Ensure mesh is visible and properly set up
-        mesh.visible = true;
-        mesh.frustumCulled = false;
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-        
-        // Add to scene
-        this.scene.add(mesh);
-        this.crowdMeshes.push(mesh);
-        spawnedCount++;
-        
-        // Register material in materialReferences for camera position updates
-        if (this.materialReferences) {
-          if (!this.materialReferences.crowd) {
-            this.materialReferences.crowd = [];
-          }
-          this.materialReferences.crowd.push(crowdMaterial);
-        }
-        
-        if (index < 5) {
-          console.log(`[CrowdSpawner] Created mesh ${index} at position (${pos.x.toFixed(2)}, ${yPos.toFixed(2)}, ${pos.z.toFixed(2)})`);
-        }
-      } catch (error) {
-        console.error(`[CrowdSpawner] Error creating mesh at index ${index}:`, error);
+    for (let i = 0; i < positions.length; i++) {
+      if (positions[i].y !== null && positions[i].y !== undefined && Number.isFinite(positions[i].y)) {
+        continue;
       }
-    });
-    
-    console.log(`[CrowdSpawner] Successfully spawned ${spawnedCount} out of ${positions.length} crowd meshes`);
-    console.log(`[CrowdSpawner] Total crowd meshes in array: ${this.crowdMeshes.length}`);
+      raycaster.set(
+        new THREE.Vector3(positions[i].x, floorMax.y + 10, positions[i].z),
+        new THREE.Vector3(0, -1, 0)
+      );
+      const hits = raycaster.intersectObject(this.floorMesh, true);
+      if (hits.length > 0) {
+        positions[i].y = hits[0].point.y;
+      } else {
+        positions[i].y = floorMin.y + floorSize.y * 0.5;
+      }
+    }
+
+    // Create instanced meshes (one per crowd geometry) and distribute instances randomly.
+    const crowdMaterial = this.shaderMaterials?.crowd || new THREE.MeshBasicMaterial({ color: 0x1e1e1e });
+
+    // Pick which geometry each position uses.
+    const geomCount = this.crowdMeshData.length;
+    const assignments = new Array(positions.length);
+    const counts = new Array(geomCount).fill(0);
+    for (let i = 0; i < positions.length; i++) {
+      const g = Math.floor(Math.random() * geomCount);
+      assignments[i] = g;
+      counts[g]++;
+    }
+
+    this.crowdInstancesGroup = new THREE.Group();
+    this.crowdInstancesGroup.name = 'CrowdInstances';
+    this.scene.add(this.crowdInstancesGroup);
+
+    const tmpMatrix = new THREE.Matrix4();
+    const tmpPos = new THREE.Vector3();
+    const tmpQuat = new THREE.Quaternion();
+    const tmpScale = new THREE.Vector3(1, 1, 1);
+
+    // Build a list of indices for each geometry assignment
+    const indicesByGeom = Array.from({ length: geomCount }, () => []);
+    for (let i = 0; i < assignments.length; i++) {
+      indicesByGeom[assignments[i]].push(i);
+    }
+
+    for (let g = 0; g < geomCount; g++) {
+      const count = counts[g];
+      if (count <= 0) continue;
+
+      const data = this.crowdMeshData[g];
+      if (!data || !data.geometry) continue;
+      const bboxMinY = Number.isFinite(data.bboxMinY) ? data.bboxMinY : 0;
+
+      const instanced = new THREE.InstancedMesh(data.geometry, crowdMaterial, count);
+      instanced.name = `CrowdInstances_${g}`;
+      instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      instanced.frustumCulled = false; // wide spread; avoid incorrect culling
+      instanced.castShadow = false;
+      instanced.receiveShadow = false;
+
+      const idxs = indicesByGeom[g];
+      for (let j = 0; j < idxs.length; j++) {
+        const p = positions[idxs[j]];
+        // Place the mesh so its bottom touches the sampled floor Y.
+        tmpPos.set(p.x, p.y - bboxMinY, p.z);
+
+        // Preserve the previous orientation default (-90deg), plus a tiny random variation for naturalness.
+        const rotY = (-Math.PI / 2) + (Math.random() - 0.5) * 0.35;
+        tmpQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+
+        tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
+        instanced.setMatrixAt(j, tmpMatrix);
+      }
+      instanced.instanceMatrix.needsUpdate = true;
+
+      this.crowdInstancesGroup.add(instanced);
+      this.crowdInstancedMeshes.push(instanced);
+    }
+
+    debugLog(
+      'logging.crowd.verbose',
+      `[CrowdSpawner] Spawned instanced crowd: ${positions.length} instances across ${this.crowdInstancedMeshes.length} instanced meshes`
+    );
   }
   
   /**
    * Clean up existing crowd meshes
    */
   cleanup() {
-    // Remove existing crowd instances
-    if (this.crowdInstances) {
-      if (this.crowdInstances.parent) {
-        this.crowdInstances.parent.remove(this.crowdInstances);
+    // Remove instanced crowd group
+    if (this.crowdInstancesGroup) {
+      if (this.crowdInstancesGroup.parent) {
+        this.crowdInstancesGroup.parent.remove(this.crowdInstancesGroup);
       }
-      this.scene.remove(this.crowdInstances);
-      this.crowdInstances.dispose();
-      this.crowdInstances = null;
+      this.scene.remove(this.crowdInstancesGroup);
+      this.crowdInstancesGroup = null;
     }
+    this.crowdInstancedMeshes = [];
     
     // Remove individual meshes and clear material references
     this.crowdMeshes.forEach(mesh => {
@@ -657,11 +628,8 @@ export class CrowdSpawner {
     
     // Also search scene for any remaining crowd instances by name
     this.scene.traverse((object) => {
-      if (object.name === 'CrowdInstances' && object !== this.crowdInstances) {
+      if (object.name === 'CrowdInstances') {
         this.scene.remove(object);
-        if (object.dispose) {
-          object.dispose();
-        }
       }
     });
   }
@@ -671,19 +639,19 @@ export class CrowdSpawner {
    * @param {number} instanceCount - Number of instances to spawn
    */
   async spawnCrowd(instanceCount = 100) {
-    console.log(`[CrowdSpawner] spawnCrowd called with count: ${instanceCount}`);
+    debugLog('logging.crowd.verbose', `[CrowdSpawner] spawnCrowd called with count: ${instanceCount}`);
     
     if (!this.floorMesh) {
-      console.warn('[CrowdSpawner] Floor mesh not available for crowd spawning');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Floor mesh not available for crowd spawning');
       return;
     }
     
     // Pre-load meshes if needed
     if (this.crowdMeshData.length === 0) {
-      console.log('[CrowdSpawner] Preloading crowd meshes...');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Preloading crowd meshes...');
       try {
         await this.preloadCrowdMeshes();
-        console.log(`[CrowdSpawner] Preloaded ${this.crowdMeshData.length} crowd meshes`);
+        debugLog('logging.crowd.verbose', `[CrowdSpawner] Preloaded ${this.crowdMeshData.length} crowd meshes`);
       } catch (error) {
         console.error('[CrowdSpawner] Failed to preload crowd meshes:', error);
         return;
@@ -692,10 +660,10 @@ export class CrowdSpawner {
     
     // Load spawn area if not already loaded
     if (!this.cachedSpawnPositions || this.cachedSpawnPositions.length === 0) {
-      console.log('[CrowdSpawner] Loading spawn area mesh...');
+      debugLog('logging.crowd.verbose', '[CrowdSpawner] Loading spawn area mesh...');
       try {
         await this.loadSpawnArea();
-        console.log(`[CrowdSpawner] Spawn area loaded, ${this.cachedSpawnPositions ? this.cachedSpawnPositions.length : 0} positions cached`);
+        debugLog('logging.crowd.verbose', `[CrowdSpawner] Spawn area loaded, ${this.cachedSpawnPositions ? this.cachedSpawnPositions.length : 0} positions cached`);
       } catch (error) {
         console.warn('[CrowdSpawner] Failed to load spawn area mesh, using fallback positioning:', error);
         // Continue with fallback method
@@ -703,7 +671,7 @@ export class CrowdSpawner {
     }
     
     // Spawn instances
-    console.log('[CrowdSpawner] Calling spawnCrowdInstances...');
+    debugLog('logging.crowd.verbose', '[CrowdSpawner] Calling spawnCrowdInstances...');
     this.spawnCrowdInstances(instanceCount);
   }
 }

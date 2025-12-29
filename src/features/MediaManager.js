@@ -5,6 +5,8 @@
 
 import * as THREE from 'three';
 import { getElement } from '../utils/domUtils.js';
+import { RUNTIME_FLAGS } from '../config/runtimeFlags.js';
+import { debugLog } from '../utils/logger.js';
 
 export class MediaManager {
   constructor(options) {
@@ -276,33 +278,35 @@ export class MediaManager {
     // VideoTexture automatically updates, but ensure it's set up correctly
     videoTexture.needsUpdate = true;
     
-    // Add an update loop to force texture updates and log status
-    const debugUpdate = () => {
-      if (video.readyState >= 2 && !video.paused) { // HAVE_CURRENT_DATA
-        // Only log occasionally to avoid spam
-        if (Math.random() < 0.01) {
-          console.log('Video texture active:', {
-            width: video.videoWidth,
-            height: video.videoHeight,
-            time: video.currentTime,
-            readyState: video.readyState
-          });
+    // Optional debug loop (kept behind a flag — it adds extra per-frame work)
+    if (RUNTIME_FLAGS?.media?.videoTextureDebugLoop) {
+      const debugUpdate = () => {
+        if (video.readyState >= 2 && !video.paused) { // HAVE_CURRENT_DATA
+          // Only log occasionally to avoid spam
+          if (Math.random() < 0.01) {
+            console.log('Video texture active:', {
+              width: video.videoWidth,
+              height: video.videoHeight,
+              time: video.currentTime,
+              readyState: video.readyState
+            });
+          }
+        } else {
+          // Warning if video stalls
+          if (Math.random() < 0.05) {
+            console.warn('Video texture stalled:', {
+              paused: video.paused,
+              readyState: video.readyState,
+              error: video.error
+            });
+          }
         }
-      } else {
-        // Warning if video stalls
-        if (Math.random() < 0.05) {
-          console.warn('Video texture stalled:', {
-            paused: video.paused,
-            readyState: video.readyState,
-            error: video.error
-          });
-        }
-      }
-      requestAnimationFrame(debugUpdate);
-    };
-    debugUpdate();
+        requestAnimationFrame(debugUpdate);
+      };
+      debugUpdate();
+    }
 
-    console.log('Created video texture from video element:', {
+    debugLog('logging.media.verbose', 'Created video texture from video element:', {
       videoWidth: video.videoWidth,
       videoHeight: video.videoHeight,
       playing: !video.paused,
@@ -327,8 +331,18 @@ export class MediaManager {
   /**
    * Handle video loaded event
    */
-  handleVideoLoaded(video, videoUrl, videoPath, fileName) {
+  async handleVideoLoaded(video, videoUrl, videoPath, fileName, file = null) {
+    // Set default frame rate, will be updated when detected
     this.videoFrameRate = 30; // Default
+    
+    // Detect actual video frame rate
+    const detectedFps = await this.detectVideoFrameRate(video, file, videoPath);
+    if (detectedFps && detectedFps > 0 && detectedFps <= 120) {
+      this.videoFrameRate = detectedFps;
+      console.log(`Detected video frame rate: ${detectedFps} fps`);
+    } else {
+      console.log(`Using default frame rate: ${this.videoFrameRate} fps`);
+    }
     
     // Create video texture
     const videoTexture = this.createVideoTexture(video);
@@ -428,6 +442,11 @@ export class MediaManager {
       this.playbackControls.setFrameRate(this.videoFrameRate);
     }
     
+    // Update frame info again with correct frame rate (in case it was updated after initial call)
+    if (this.updateFrameInfo) {
+      this.updateFrameInfo(video);
+    }
+    
     // Update status
     if (this.textureStatus) {
       this.textureStatus.textContent = fileName || videoPath;
@@ -519,7 +538,7 @@ export class MediaManager {
       this.setupVideoElement(video, videoUrl);
       
       video.addEventListener('loadeddata', () => {
-        this.handleVideoLoaded(video, videoUrl, file.name, file.name);
+        this.handleVideoLoaded(video, videoUrl, file.name, file.name, file);
         
         if (this.videoAssetSelect) {
           this.videoAssetSelect.value = '';
