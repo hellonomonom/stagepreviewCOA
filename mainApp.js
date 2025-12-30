@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ledMeshFiles, stageMeshFiles, crowdMeshPaths, DEFAULT_MAPPING_TYPE, correctedWingMeshes, djMeshFiles } from './src/config/meshPaths.js';
 import { shaderConfigs } from './src/config/shaderConfig.js';
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from './src/config/cameraPresets.js';
-import { vrCameraPresets, DEFAULT_VR_CAMERA_PRESET } from './src/config/vrCameraPresets.js';
+// VR config and manager will be loaded dynamically when needed
 import { createShaderMaterials, createTextureShaderMaterial, createLEDShaderMaterial, updateLEDShaders, applyShaderToGroup, updateCameraPositionInShaders, loadMaskTexture } from './src/core/ShaderManager.js';
 import { getShaderType } from './src/utils/shaderUtils.js';
 import { getElement } from './src/utils/domUtils.js';
@@ -18,7 +18,7 @@ import { MediaManager } from './src/features/MediaManager.js';
 import { FileInfoManager } from './src/features/FileInfoManager.js';
 import { OverlayManager } from './src/features/OverlayManager.js';
 import { SceneControls } from './src/features/SceneControls.js';
-import { VRManager } from './src/vr/VRManager.js';
+// VRManager will be loaded dynamically when needed
 import { LoadingManager } from './src/core/LoadingManager.js';
 import { InitializationManager } from './src/core/InitializationManager.js';
 import { registerInitSteps } from './src/app/initSteps.js';
@@ -2415,6 +2415,8 @@ function initializeCameraControls() {
 
 async function initializeVRManager() {
   try {
+    // Dynamically import VR modules
+    const { VRManager } = await import('./src/vr/VRManager.js');
     vrManager = new VRManager(renderer, scene, camera, controls);
   } catch (error) {
     console.error('Failed to initialize VR Manager:', error);
@@ -2482,15 +2484,15 @@ async function initializeVRManager() {
       console.warn('VR references not ready:', error);
     }
     
-    // Setup VR preset selector in camera tab
-    setupVRPresetSelector();
+    // Setup VR preset selector in camera tab (will dynamically load vrCameraPresets)
+    await setupVRPresetSelector();
   }
 }
 
 /**
  * Setup VR preset selector in camera tab
  */
-function setupVRPresetSelector() {
+async function setupVRPresetSelector() {
   const vrPresetSelect = document.getElementById('vrPresetSelect');
   const cycleVRPresetBtn = document.getElementById('cycleVRPresetBtn');
   
@@ -2498,6 +2500,9 @@ function setupVRPresetSelector() {
     console.warn('VR preset selector elements not found');
     return;
   }
+  
+  // Dynamically import VR camera presets
+  const { vrCameraPresets, DEFAULT_VR_CAMERA_PRESET } = await import('./src/config/vrCameraPresets.js');
   
   // Populate dropdown with presets
   Object.entries(vrCameraPresets).forEach(([key, preset]) => {

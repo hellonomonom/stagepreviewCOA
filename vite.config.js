@@ -116,5 +116,37 @@ export default defineConfig({
   },
   // Expose environment variables to the client
   envPrefix: 'VITE_',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Vendor chunk for third-party libraries
+          if (id.includes('node_modules')) {
+            if (id.includes('three')) {
+              return 'vendor-three';
+            }
+            return 'vendor';
+          }
+          
+          // VR chunk - all VR-related modules (will be lazy-loaded)
+          if (id.includes('/src/vr/') || id.includes('/src/config/vrCameraPresets.js')) {
+            return 'vr';
+          }
+          
+          // UI chunk - UI components
+          if (id.includes('/src/ui/')) {
+            return 'ui';
+          }
+          
+          // Core chunk - core application logic
+          if (id.includes('/src/core/') || id.includes('/src/app/')) {
+            return 'core';
+          }
+        },
+      },
+    },
+    // Increase chunk size warning limit since we're now splitting chunks
+    chunkSizeWarningLimit: 600,
+  },
 });
 
