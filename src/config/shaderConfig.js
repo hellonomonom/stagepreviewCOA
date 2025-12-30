@@ -10,8 +10,8 @@ export const shaderConfigs = {
     specular: 0.013
   },
   artists: {
-    baseColor: [0.733, 0.729, 0.749],
-    roughness: 0.000,
+    baseColor: [0.439, 0.439, 0.439],
+    roughness: 1.000,
     specular: 0.500
   },
   stage: {
@@ -35,8 +35,8 @@ export const shaderConfigs = {
     specular: 0.200
   },
   crowd: {
-    baseColor: [0.059, 0.059, 0.059],
-    roughness: 0.081,
+    baseColor: [0.039, 0.039, 0.039],
+    roughness: 1.000,
     specular: 0.000
   },
   marble: {

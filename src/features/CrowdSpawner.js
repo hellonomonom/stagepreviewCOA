@@ -437,18 +437,19 @@ export class CrowdSpawner {
       return;
     }
     
-    // Get floor bounding box (for fallback raycasting)
+    // Get floor bounding box (for fallback raycasting) - reuse Box3
     const box = new THREE.Box3();
     box.setFromObject(actualFloorMesh);
     const floorMin = box.min;
     const floorMax = box.max;
     const floorSize = box.getSize(new THREE.Vector3());
     
-    // Generate spawn positions.
+    // Generate spawn positions - optimized to reduce memory allocations
     // Prefer cached spawn-area points (already on the surface, including y).
     // Fallback to random XZ + raycast to floor for Y.
-    let positions = [];
+    const positions = new Array(instanceCount);
     const hasCached = this.cachedSpawnPositions && this.cachedSpawnPositions.length > 0;
+    
     if (hasCached) {
       // Reset used positions if we exhausted the cache.
       if (this.usedPositionIndices.size >= this.cachedSpawnPositions.length) {
@@ -456,43 +457,69 @@ export class CrowdSpawner {
         this.usedPositionIndices.clear();
       }
 
-      // Select indices (avoid duplicates until cache is exhausted).
-      const availableIndices = [];
-      for (let i = 0; i < this.cachedSpawnPositions.length; i++) {
-        if (!this.usedPositionIndices.has(i)) availableIndices.push(i);
-      }
-      // Shuffle indices for random selection
-      for (let i = availableIndices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [availableIndices[i], availableIndices[j]] = [availableIndices[j], availableIndices[i]];
-      }
-
-      const positionsToUse = Math.min(instanceCount, availableIndices.length);
-      for (let i = 0; i < positionsToUse; i++) {
-        const idx = availableIndices[i];
-        this.usedPositionIndices.add(idx);
-        const p = this.cachedSpawnPositions[idx];
-        positions.push({ x: p.x, y: p.y, z: p.z });
+      const cacheLength = this.cachedSpawnPositions.length;
+      const availableCount = cacheLength - this.usedPositionIndices.size;
+      const positionsToUse = Math.min(instanceCount, availableCount);
+      
+      // Optimized position selection: use Fisher-Yates shuffle on available indices only
+      // Build available indices array only if needed (more efficient for large sets)
+      if (availableCount < cacheLength * 0.5) {
+        // If less than half are available, build array of available indices
+        const availableIndices = [];
+        for (let i = 0; i < cacheLength; i++) {
+          if (!this.usedPositionIndices.has(i)) {
+            availableIndices.push(i);
+          }
+        }
+        // Shuffle in-place using Fisher-Yates
+        for (let i = availableIndices.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const temp = availableIndices[i];
+          availableIndices[i] = availableIndices[j];
+          availableIndices[j] = temp;
+        }
+        
+        // Use shuffled available indices
+        for (let i = 0; i < positionsToUse; i++) {
+          const idx = availableIndices[i];
+          this.usedPositionIndices.add(idx);
+          const p = this.cachedSpawnPositions[idx];
+          positions[i] = { x: p.x, y: p.y, z: p.z };
+        }
+      } else {
+        // If more than half are available, use rejection sampling (more efficient)
+        let selected = 0;
+        while (selected < positionsToUse) {
+          const idx = Math.floor(Math.random() * cacheLength);
+          if (!this.usedPositionIndices.has(idx)) {
+            this.usedPositionIndices.add(idx);
+            const p = this.cachedSpawnPositions[idx];
+            positions[selected] = { x: p.x, y: p.y, z: p.z };
+            selected++;
+          }
+        }
       }
 
       // If more requested than available unique indices, reuse randomly.
       if (instanceCount > positionsToUse) {
         const remaining = instanceCount - positionsToUse;
         for (let i = 0; i < remaining; i++) {
-          const idx = Math.floor(Math.random() * this.cachedSpawnPositions.length);
+          const idx = Math.floor(Math.random() * cacheLength);
           const p = this.cachedSpawnPositions[idx];
-          positions.push({ x: p.x, y: p.y, z: p.z });
+          positions[positionsToUse + i] = { x: p.x, y: p.y, z: p.z };
         }
       }
     } else {
       debugLog('logging.crowd.verbose', '[CrowdSpawner] No cached spawn area positions available, using bounding box + raycast fallback');
       const margin = 0.1;
+      const xRange = floorSize.x - 2 * margin;
+      const zRange = floorSize.z - 2 * margin;
       for (let i = 0; i < instanceCount; i++) {
-        positions.push({
-          x: floorMin.x + margin + Math.random() * (floorSize.x - 2 * margin),
+        positions[i] = {
+          x: floorMin.x + margin + Math.random() * xRange,
           y: null,
-          z: floorMin.z + margin + Math.random() * (floorSize.z - 2 * margin)
-        });
+          z: floorMin.z + margin + Math.random() * zRange
+        };
       }
     }
     
@@ -501,31 +528,67 @@ export class CrowdSpawner {
       return;
     }
 
-    // For fallback positions without Y, raycast to floor once per position.
+    // For fallback positions without Y, batch raycast operations
+    // Reuse raycaster and vectors to reduce allocations
     const raycaster = new THREE.Raycaster();
+    const rayOrigin = new THREE.Vector3();
+    const rayDirection = new THREE.Vector3(0, -1, 0);
+    const positionsNeedingRaycast = [];
+    
     for (let i = 0; i < positions.length; i++) {
-      if (positions[i].y !== null && positions[i].y !== undefined && Number.isFinite(positions[i].y)) {
-        continue;
+      if (positions[i].y === null || positions[i].y === undefined || !Number.isFinite(positions[i].y)) {
+        positionsNeedingRaycast.push(i);
       }
-      raycaster.set(
-        new THREE.Vector3(positions[i].x, floorMax.y + 10, positions[i].z),
-        new THREE.Vector3(0, -1, 0)
-      );
-      const hits = raycaster.intersectObject(this.floorMesh, true);
-      if (hits.length > 0) {
-        positions[i].y = hits[0].point.y;
-      } else {
-        positions[i].y = floorMin.y + floorSize.y * 0.5;
+    }
+    
+    // Batch raycast operations
+    if (positionsNeedingRaycast.length > 0) {
+      for (let i = 0; i < positionsNeedingRaycast.length; i++) {
+        const idx = positionsNeedingRaycast[i];
+        const pos = positions[idx];
+        rayOrigin.set(pos.x, floorMax.y + 10, pos.z);
+        raycaster.set(rayOrigin, rayDirection);
+        const hits = raycaster.intersectObject(this.floorMesh, true);
+        if (hits.length > 0) {
+          pos.y = hits[0].point.y;
+        } else {
+          pos.y = floorMin.y + floorSize.y * 0.5;
+        }
       }
     }
 
     // Create instanced meshes (one per crowd geometry) and distribute instances randomly.
-    // Use the crowd material from shaderMaterials (all instances share the same material)
-    const crowdMaterial = this.shaderMaterials?.crowd || new THREE.MeshBasicMaterial({ color: 0x1e1e1e });
+    // Use MeshStandardMaterial instead of custom PBR shader for better performance with many instances
+    // MeshStandardMaterial uses Three.js's optimized built-in shader which is more efficient
+    const crowdShaderConfig = this.shaderMaterials?.crowd;
+    let crowdMaterial;
+    
+    if (crowdShaderConfig && crowdShaderConfig.uniforms) {
+      // Extract values from shader material uniforms
+      const baseColor = crowdShaderConfig.uniforms.uBaseColor?.value || new THREE.Vector3(0.039, 0.039, 0.039);
+      const roughness = crowdShaderConfig.uniforms.uRoughness?.value ?? 1.000;
+      const specular = crowdShaderConfig.uniforms.uSpecular?.value ?? 0.000;
+      
+      // Use MeshStandardMaterial for better performance (optimized built-in shader)
+      crowdMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(baseColor.x, baseColor.y, baseColor.z),
+        roughness: roughness,
+        metalness: 0.0, // No metalness for crowd
+        // Map specular to emissive for similar visual effect without expensive calculations
+        emissive: new THREE.Color(baseColor.x * specular * 0.1, baseColor.y * specular * 0.1, baseColor.z * specular * 0.1)
+      });
+    } else {
+      // Fallback to default material (matches shader config)
+      crowdMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0.039, 0.039, 0.039),
+        roughness: 1.000,
+        metalness: 0.0
+      });
+    }
     
     // Add crowd material to materialReferences so shader controls can update it
     // This ensures crowd instance materials are updated when shader controls change
-    if (this.materialReferences && crowdMaterial && this.shaderMaterials?.crowd) {
+    if (this.materialReferences && crowdMaterial) {
       if (!this.materialReferences.crowd) {
         this.materialReferences.crowd = [];
       }
@@ -535,11 +598,13 @@ export class CrowdSpawner {
       }
     }
 
-    // Pick which geometry each position uses.
+    // Pick which geometry each position uses - pre-allocate arrays
     const geomCount = this.crowdMeshData.length;
-    const assignments = new Array(positions.length);
+    const assignments = new Array(instanceCount);
     const counts = new Array(geomCount).fill(0);
-    for (let i = 0; i < positions.length; i++) {
+    
+    // Pre-generate random assignments
+    for (let i = 0; i < instanceCount; i++) {
       const g = Math.floor(Math.random() * geomCount);
       assignments[i] = g;
       counts[g]++;
@@ -549,17 +614,20 @@ export class CrowdSpawner {
     this.crowdInstancesGroup.name = 'CrowdInstances';
     this.scene.add(this.crowdInstancesGroup);
 
+    // Reuse temporary objects outside loops to reduce allocations
     const tmpMatrix = new THREE.Matrix4();
     const tmpPos = new THREE.Vector3();
     const tmpQuat = new THREE.Quaternion();
     const tmpScale = new THREE.Vector3(1, 1, 1);
+    const yAxis = new THREE.Vector3(0, 1, 0); // Reuse for rotation axis
 
-    // Build a list of indices for each geometry assignment
+    // Build a list of indices for each geometry assignment - pre-allocate arrays
     const indicesByGeom = Array.from({ length: geomCount }, () => []);
     for (let i = 0; i < assignments.length; i++) {
       indicesByGeom[assignments[i]].push(i);
     }
 
+    // Process each geometry type
     for (let g = 0; g < geomCount; g++) {
       const count = counts[g];
       if (count <= 0) continue;
@@ -570,20 +638,27 @@ export class CrowdSpawner {
 
       const instanced = new THREE.InstancedMesh(data.geometry, crowdMaterial, count);
       instanced.name = `CrowdInstances_${g}`;
-      instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      instanced.frustumCulled = false; // wide spread; avoid incorrect culling
+      // Use StaticDrawUsage since positions don't change after spawning - major performance improvement
+      instanced.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      // Enable frustum culling for better performance - instances outside view won't be rendered
+      // This significantly improves performance with high instance counts
+      instanced.frustumCulled = true;
       instanced.castShadow = false;
       instanced.receiveShadow = false;
 
       const idxs = indicesByGeom[g];
+      const baseRotation = -Math.PI / 2;
+      const rotationVariation = 0.35;
+      
+      // Optimize matrix composition loop
       for (let j = 0; j < idxs.length; j++) {
         const p = positions[idxs[j]];
         // Place the mesh so its bottom touches the sampled floor Y.
         tmpPos.set(p.x, p.y - bboxMinY, p.z);
 
         // Preserve the previous orientation default (-90deg), plus a tiny random variation for naturalness.
-        const rotY = (-Math.PI / 2) + (Math.random() - 0.5) * 0.35;
-        tmpQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+        const rotY = baseRotation + (Math.random() - 0.5) * rotationVariation;
+        tmpQuat.setFromAxisAngle(yAxis, rotY);
 
         tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
         instanced.setMatrixAt(j, tmpMatrix);

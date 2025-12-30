@@ -623,11 +623,32 @@ function updateShaderUniforms(shaderType, uniformName, value) {
   }
   
   materialReferences[shaderType].forEach(material => {
-    if (material && material.uniforms && material.uniforms[uniformName]) {
+    if (!material) return;
+    
+    // Handle shader materials with uniforms (PBR shader)
+    if (material.uniforms && material.uniforms[uniformName]) {
       if (uniformName === 'uBaseColor') {
         material.uniforms[uniformName].value.set(...value);
       } else {
         material.uniforms[uniformName].value = value;
+      }
+      material.needsUpdate = true;
+    }
+    // Handle MeshStandardMaterial (used for crowd for better performance)
+    else if (material instanceof THREE.MeshStandardMaterial) {
+      if (uniformName === 'uBaseColor') {
+        material.color.setRGB(value[0], value[1], value[2]);
+      } else if (uniformName === 'uRoughness') {
+        material.roughness = value;
+      } else if (uniformName === 'uSpecular') {
+        // Map specular to emissive for MeshStandardMaterial
+        // Use the material's current color for emissive tint
+        const emissiveIntensity = value * 0.1;
+        material.emissive.setRGB(
+          material.color.r * emissiveIntensity,
+          material.color.g * emissiveIntensity,
+          material.color.b * emissiveIntensity
+        );
       }
       material.needsUpdate = true;
     }
@@ -636,11 +657,29 @@ function updateShaderUniforms(shaderType, uniformName, value) {
 
 // Function to update UI controls to match current shader material values
 function syncControlsToShaderValues(shaderType, material) {
-  if (!material || !material.uniforms) return;
+  if (!material) return;
   
-  const baseColor = material.uniforms.uBaseColor.value;
-  const roughness = material.uniforms.uRoughness.value;
-  const specular = material.uniforms.uSpecular.value;
+  // Handle shader materials with uniforms
+  let baseColor, roughness, specular;
+  if (material.uniforms) {
+    baseColor = material.uniforms.uBaseColor.value;
+    roughness = material.uniforms.uRoughness.value;
+    specular = material.uniforms.uSpecular.value;
+  }
+  // Handle MeshStandardMaterial (used for crowd)
+  else if (material instanceof THREE.MeshStandardMaterial) {
+    baseColor = {
+      x: material.color.r,
+      y: material.color.g,
+      z: material.color.b
+    };
+    roughness = material.roughness;
+    // Estimate specular from emissive (reverse of the mapping we do in updateShaderUniforms)
+    const emissiveAvg = (material.emissive.r + material.emissive.g + material.emissive.b) / 3;
+    specular = Math.min(emissiveAvg / 0.1, 1.0);
+  } else {
+    return; // Unknown material type
+  }
   
   // Update sliders and value displays
   const colorR = document.getElementById(`${shaderType}ColorR`);
@@ -2691,6 +2730,10 @@ if (videoAssetSelect) {
   videoAssetSelect.value = DEFAULT_VIDEO_PATH;
 }
 
+// Track last camera position for optimized shader updates
+let lastCameraPosition = new THREE.Vector3().copy(camera.position);
+const cameraUpdateThreshold = 0.1; // Only update shaders if camera moved more than 0.1 units
+
 // Animation loop
 // Use setAnimationLoop for WebXR compatibility (works for both desktop and VR)
 startAnimationLoop({
@@ -2710,8 +2753,13 @@ startAnimationLoop({
       }
     }
 
-    // Update camera position in all shader materials
-    updateCameraPositionInShaders(shaderMaterials, materialReferences, camera);
+    // Update camera position in shader materials only if camera moved significantly
+    // This reduces expensive shader uniform updates when camera is stationary
+    const cameraMoved = camera.position.distanceTo(lastCameraPosition) > cameraUpdateThreshold;
+    if (cameraMoved) {
+      updateCameraPositionInShaders(shaderMaterials, materialReferences, camera);
+      lastCameraPosition.copy(camera.position);
+    }
 
     // Update camera debug info (only if not in VR mode)
     if (cameraControls && (!vrManager || !vrManager.getIsVRActive())) {

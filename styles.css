@@ -1799,7 +1799,7 @@ input[type="color"]::-moz-color-swatch {
     z-index: var(--z-panel);
     transition: all var(--transition-base);
     box-shadow: var(--shadow-md);
-    opacity: 0.3;
+    opacity: 0.05;
 }
 
 .dev-mode-toggle:hover {
