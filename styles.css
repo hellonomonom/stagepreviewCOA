@@ -1321,6 +1321,25 @@ canvas {
     -webkit-backdrop-filter: blur(10px);
 }
 
+/* Mobile optimizations for FPS counter */
+@media (max-width: 700px) {
+    .fps-counter {
+        font-size: 14px;
+        padding: 8px 12px;
+        top: var(--space-sm);
+        left: var(--space-sm);
+    }
+}
+
+@media (max-width: 450px) {
+    .fps-counter {
+        font-size: 16px;
+        padding: 10px 14px;
+        top: var(--space-xs);
+        left: var(--space-xs);
+    }
+}
+
 .debug-panel-header {
     font-size: 11px;
     font-weight: var(--font-weight-semibold);

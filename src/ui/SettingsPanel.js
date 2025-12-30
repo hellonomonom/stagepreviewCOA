@@ -42,7 +42,8 @@ export class SettingsPanel {
 
     // Dev tools
     this.showFpsCounterCheckbox = getElement('showFpsCounter');
-    this.fpsCounterEl = getElement('fpsCounter');
+    this.fpsCounterEl = getElement('fpsCounter'); // Overlay FPS counter
+    this.fpsCounterDevTabEl = getElement('fpsCounterDevTab'); // Dev tab FPS counter
     this.fpsRafId = null;
     this.fpsLastTs = 0;
     this.fpsFrames = 0;
@@ -182,29 +183,55 @@ export class SettingsPanel {
       }
     }
     
-    // Show/hide FPS counter controls in dev tab
+    // FPS counter is now always available, but show/hide dev tab checkbox based on dev mode
+    // Camera tab checkbox is always visible for mobile access
     if (this.showFpsCounterCheckbox) {
       const fpsControlGroup = this.showFpsCounterCheckbox.closest('.control-group');
       if (fpsControlGroup) {
+        // Only hide the dev tab checkbox control group if dev mode is disabled
         setVisible(fpsControlGroup, enabled);
       }
+    }
+    
+    // Handle FPS counter state
+    try {
+      let shouldShow = false;
       
       if (enabled) {
-        // When enabling dev mode, restore FPS counter state from localStorage
-        try {
-          const saved = localStorage.getItem('dev.showFpsCounter');
-          const shouldShow = saved === '1';
-          if (this.showFpsCounterCheckbox) {
-            this.showFpsCounterCheckbox.checked = shouldShow;
+        // When enabling dev mode, check if there's a saved preference
+        const saved = localStorage.getItem('dev.showFpsCounter');
+        
+        if (saved === '1') {
+          // Restore previously saved enabled state
+          shouldShow = true;
+        } else if (saved === '0') {
+          // User explicitly disabled it before, respect that
+          shouldShow = false;
+        } else {
+          // No saved preference - automatically enable FPS counter when dev mode is activated
+          shouldShow = true;
+          // Save this preference
+          try {
+            localStorage.setItem('dev.showFpsCounter', '1');
+          } catch {
+            // ignore storage errors
           }
-          this.setFpsCounterVisible(shouldShow);
-        } catch {
-          // ignore storage errors
         }
       } else {
-        // If disabling dev mode, also hide the FPS counter
-        this.setFpsCounterVisible(false);
+        // When disabling dev mode, restore from localStorage (for mobile compatibility)
+        const saved = localStorage.getItem('dev.showFpsCounter');
+        shouldShow = saved === '1';
       }
+      
+      // Sync checkbox
+      if (this.showFpsCounterCheckbox) {
+        this.showFpsCounterCheckbox.checked = shouldShow;
+      }
+      
+      // Update FPS counter visibility
+      this.setFpsCounterVisible(shouldShow);
+    } catch {
+      // ignore storage errors
     }
     
     // Save to localStorage if requested
@@ -344,54 +371,73 @@ export class SettingsPanel {
   }
 
   initDevTools() {
-    if (!this.showFpsCounterCheckbox || !this.fpsCounterEl) return;
+    // Need at least one FPS counter element (overlay or dev tab)
+    if (!this.fpsCounterEl && !this.fpsCounterDevTabEl) return;
 
-    // Only enable FPS counter if dev mode is enabled
-    if (!this.devModeEnabled) {
-      // Hide FPS counter checkbox and counter if dev mode is disabled
-      setVisible(this.showFpsCounterCheckbox.closest('.control-group'), false);
-      this.setFpsCounterVisible(false);
-      return;
-    }
-
-    // Default off; persist across reloads
-    let initial = false;
+    // FPS counter is now always available (not just in dev mode)
+    // Default to enabled if dev mode is on, otherwise default to off
+    let initial = this.devModeEnabled; // Default based on dev mode state
     let hasSavedPreference = false;
     try {
       const saved = localStorage.getItem('dev.showFpsCounter');
       hasSavedPreference = saved === '1' || saved === '0';
-      if (saved === '1') initial = true;
-      if (saved === '0') initial = false;
+      if (saved === '1') {
+        initial = true;
+      } else if (saved === '0') {
+        initial = false;
+      }
+      // If no saved preference, use dev mode state as default
     } catch {
       // ignore (e.g. storage disabled)
     }
 
-    this.showFpsCounterCheckbox.checked = initial;
+    // Initialize checkbox
+    if (this.showFpsCounterCheckbox) {
+      this.showFpsCounterCheckbox.checked = initial;
+    }
+    
+    // Always hide overlay FPS counter (only dev tab version is shown)
+    if (this.fpsCounterEl) {
+      toggleClass(this.fpsCounterEl, 'hidden', true);
+    }
+    
     this.setFpsCounterVisible(initial);
 
-    on(this.showFpsCounterCheckbox, 'change', (e) => {
-      const visible = e.target.checked;
-      this.setFpsCounterVisible(visible);
-      try {
-        localStorage.setItem('dev.showFpsCounter', visible ? '1' : '0');
-      } catch {
-        // ignore
-      }
-    });
+    // Handle changes from dev tab checkbox
+    if (this.showFpsCounterCheckbox) {
+      on(this.showFpsCounterCheckbox, 'change', (e) => {
+        const visible = e.target.checked;
+        this.setFpsCounterVisible(visible);
+        try {
+          localStorage.setItem('dev.showFpsCounter', visible ? '1' : '0');
+        } catch {
+          // ignore
+        }
+      });
+    }
   }
 
   setFpsCounterVisible(visible) {
-    if (!this.fpsCounterEl) return;
-    toggleClass(this.fpsCounterEl, 'hidden', !visible);
+    // Overlay FPS counter is always hidden (only dev tab version is shown)
+    if (this.fpsCounterEl) {
+      toggleClass(this.fpsCounterEl, 'hidden', true); // Always hide overlay
+    }
+    
+    // Dev tab FPS counter is always visible when dev tab is open (no need to hide/show)
+    // Just start/stop the counter based on visibility setting
     if (visible) {
       this.startFpsCounter();
     } else {
       this.stopFpsCounter();
+      // Reset dev tab display when stopped
+      if (this.fpsCounterDevTabEl) {
+        this.fpsCounterDevTabEl.textContent = 'FPS: --';
+      }
     }
   }
 
   startFpsCounter() {
-    if (!this.fpsCounterEl) return;
+    if (!this.fpsCounterEl && !this.fpsCounterDevTabEl) return;
     if (this.fpsRafId) return;
 
     this.fpsFrames = 0;
@@ -404,7 +450,18 @@ export class SettingsPanel {
       // Update ~2x/sec for stable readout
       if (dt >= 500) {
         const fps = (this.fpsFrames * 1000) / dt;
-        this.fpsCounterEl.textContent = `FPS: ${fps.toFixed(1)}`;
+        const fpsText = `FPS: ${fps.toFixed(1)}`;
+        
+        // Update overlay FPS counter (if visible)
+        if (this.fpsCounterEl) {
+          this.fpsCounterEl.textContent = fpsText;
+        }
+        
+        // Update dev tab FPS counter (always update, visibility controlled by tab)
+        if (this.fpsCounterDevTabEl) {
+          this.fpsCounterDevTabEl.textContent = fpsText;
+        }
+        
         this.fpsFrames = 0;
         this.fpsLastTs = ts;
       }
@@ -433,7 +490,7 @@ export class SettingsPanel {
     // @ts-ignore
     const gitCommit = typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'unknown';
     
-    const lines = [`v${version}`];
+    const lines = [`V${version}`];
     
     if (buildTime) {
       const date = new Date(buildTime);

@@ -11,7 +11,7 @@ export function createCamera() {
 
   // Default camera position (may be overridden later by presets)
   camera.position.set(5, 5, 5);
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(0, 7.86, 21);
   return camera;
 }
 
@@ -38,7 +38,7 @@ export function createControls(camera, renderer) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-  controls.target.set(0, 0, 0);
+  controls.target.set(0, 7.86, 21);
   return controls;
 }
 
@@ -76,5 +76,6 @@ export function startAnimationLoop({ renderer, scene, camera, onFrame }) {
 
   renderer.setAnimationLoop(animate);
 }
+
 
 

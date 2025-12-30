@@ -405,6 +405,12 @@ export class CrowdSpawner {
       return;
     }
     
+    // If instanceCount is 0, just clean up and return
+    if (instanceCount === 0) {
+      this.cleanup();
+      return;
+    }
+    
     // Clean up existing crowd
     this.cleanup();
     
@@ -514,7 +520,20 @@ export class CrowdSpawner {
     }
 
     // Create instanced meshes (one per crowd geometry) and distribute instances randomly.
+    // Use the crowd material from shaderMaterials (all instances share the same material)
     const crowdMaterial = this.shaderMaterials?.crowd || new THREE.MeshBasicMaterial({ color: 0x1e1e1e });
+    
+    // Add crowd material to materialReferences so shader controls can update it
+    // This ensures crowd instance materials are updated when shader controls change
+    if (this.materialReferences && crowdMaterial && this.shaderMaterials?.crowd) {
+      if (!this.materialReferences.crowd) {
+        this.materialReferences.crowd = [];
+      }
+      // Only add if not already in the array (to avoid duplicates when respawning)
+      if (!this.materialReferences.crowd.includes(crowdMaterial)) {
+        this.materialReferences.crowd.push(crowdMaterial);
+      }
+    }
 
     // Pick which geometry each position uses.
     const geomCount = this.crowdMeshData.length;
@@ -643,6 +662,12 @@ export class CrowdSpawner {
     
     if (!this.floorMesh) {
       debugLog('logging.crowd.verbose', '[CrowdSpawner] Floor mesh not available for crowd spawning');
+      return;
+    }
+    
+    // If instanceCount is 0, just clean up and return
+    if (instanceCount === 0) {
+      this.cleanup();
       return;
     }
     

@@ -86,7 +86,6 @@ let srGarageMesh = null;
 // Store reference to floor mesh
 let floorMesh = null;
 
-
 // Store LED front visibility state for restoration during mesh reload (to prevent flash)
 let restoreLedFrontVisible = true;
 
@@ -165,8 +164,13 @@ meshLoader.setCallbacks({
     // Spawn crowd with slider value or default
     try {
       const slider = document.getElementById('crowdInstanceCountSlider');
-      const count = slider ? parseInt(slider.value) || 4000 : 4000;
-      await crowdSpawner.spawnCrowd(count);
+      const parsed = slider ? parseInt(slider.value) : NaN;
+      const count = isNaN(parsed) ? 4000 : parsed;
+      if (count === 0) {
+        crowdSpawner.cleanup();
+      } else {
+        await crowdSpawner.spawnCrowd(count);
+      }
       loadingManager.setLoaded('crowdMeshes');
     } catch (error) {
       console.warn('Failed to spawn crowd:', error);
@@ -369,9 +373,14 @@ async function spawnCrowdCubes() {
   }
   
   const slider = document.getElementById('crowdInstanceCountSlider');
-  const instanceCount = slider ? parseInt(slider.value) || 5000 : 5000;
+  const parsed = slider ? parseInt(slider.value) : NaN;
+  const instanceCount = isNaN(parsed) ? 5000 : parsed;
   console.log(`[spawnCrowdCubes] Spawning ${instanceCount} crowd instances (slider value: ${slider ? slider.value : 'N/A'})`);
-  await crowdSpawner.spawnCrowd(instanceCount);
+  if (instanceCount === 0) {
+    crowdSpawner.cleanup();
+  } else {
+    await crowdSpawner.spawnCrowd(instanceCount);
+  }
 }
 
 // Function to spawn crowd instances (wrapper for CrowdSpawner)
@@ -385,7 +394,8 @@ function spawnCrowdInstances() {
   }
   
   const slider = document.getElementById('crowdInstanceCountSlider');
-  const instanceCount = slider ? parseInt(slider.value) || 5000 : 5000;
+  const parsed = slider ? parseInt(slider.value) : NaN;
+  const instanceCount = isNaN(parsed) ? 5000 : parsed;
   
   if (instanceCount === 0) {
     crowdSpawner.cleanup();
@@ -473,7 +483,7 @@ if (versionInfoEl) {
   // @ts-ignore
   const gitCommit = typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'unknown';
   
-  const lines = [`v${version}`];
+  const lines = [`V${version}`];
   
   if (buildTime) {
     const date = new Date(buildTime);

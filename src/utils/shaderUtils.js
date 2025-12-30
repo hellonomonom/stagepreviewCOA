@@ -16,6 +16,12 @@ export function getShaderType(path) {
     return 'artists';
   }
   
+  // Floor shader - check BEFORE crowd to ensure floor meshes get correct shader
+  // (some floor meshes may have "crowd" in their name like "CrowdFloor")
+  if (lowerPath.includes('floor')) {
+    return 'floor';
+  }
+  
   // Crowd shader - check for crowd folder/meshes (before general crowd check)
   if (lowerPath.includes('crowd/') || (lowerPath.includes('crowd') && lowerPath.includes('.glb') && !lowerPath.includes('stage_crowd'))) {
     return 'crowd';
@@ -34,11 +40,6 @@ export function getShaderType(path) {
   // Pillars shader (includes Columns)
   if (lowerPath.includes('pillars') || lowerPath.includes('columns')) {
     return 'pillars';
-  }
-  
-  // Floor shader
-  if (lowerPath.includes('floor')) {
-    return 'floor';
   }
   
   // Roof shader
