@@ -21,6 +21,23 @@ export class FileInfoManager {
     this.showFileInfoCheckbox = document.getElementById('showFileInfo');
     this.overlayImage = document.getElementById('overlayImage');
   }
+  
+  /**
+   * Get current frame offset value
+   * @returns {number} Frame offset in frames
+   */
+  getFrameOffset() {
+    // Load from localStorage if available, otherwise use default
+    const saved = localStorage.getItem('frameOffset');
+    if (saved !== null) {
+      const offset = parseFloat(saved);
+      if (!isNaN(offset) && offset >= 0 && offset <= 2) {
+        return offset;
+      }
+    }
+    // Default offset
+    return 1.0;
+  }
 
   /**
    * Extract filename from path
@@ -247,8 +264,24 @@ export class FileInfoManager {
     const currentTime = video.currentTime || 0;
     const duration = video.duration;
     const frameRate = this.mediaManager ? this.mediaManager.getVideoFrameRate() : 30;
-    const currentFrame = Math.floor(currentTime * frameRate);
+    
+    // Calculate frame number to match burned-in frame counter
+    // Get frame offset from UI control (adjustable via slider)
+    const frameOffset = this.getFrameOffset();
+    
+    // Calculate frame number
+    // Standard formula: frame = floor((time - offset) * fps)
+    const frameNumber = (currentTime - (frameOffset / frameRate)) * frameRate;
+    let currentFrame = Math.floor(frameNumber);
+    
+    // Ensure non-negative
+    currentFrame = Math.max(0, currentFrame);
+    
+    // Calculate total frames
     const totalFrames = Math.floor(duration * frameRate);
+    
+    // Clamp to valid range
+    const clampedFrame = Math.max(0, Math.min(currentFrame, Math.max(0, totalFrames - 1)));
     
     // Update filename display with codec info and FPS
     if (this.fileNameDisplay) {
@@ -309,7 +342,7 @@ export class FileInfoManager {
       } else {
         // Show time display for regular videos
         this.timeDisplay.style.display = '';
-        const frameNumber = String(currentFrame).padStart(4, '0');
+        const frameNumber = String(clampedFrame).padStart(4, '0');
         const timeString = this.formatTime(currentTime);
         this.timeDisplay.textContent = `${frameNumber} | ${timeString}`;
       }

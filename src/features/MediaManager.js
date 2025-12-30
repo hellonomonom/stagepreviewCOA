@@ -72,20 +72,33 @@ export class MediaManager {
    */
   async parseMP4FrameRate(file) {
     if (!file || !file.name.toLowerCase().endsWith('.mp4')) {
+      console.log('[FPS Detection] Not an MP4 file or file is null');
       return null;
     }
     
     try {
-      const chunkSize = 64 * 1024;
+      // Read a larger chunk to ensure we get track information
+      // Try to read up to 512KB to ensure we get all metadata
+      const chunkSize = 512 * 1024;
       const blob = file.slice(0, chunkSize);
       const arrayBuffer = await blob.arrayBuffer();
       const view = new DataView(arrayBuffer);
+      console.log('[FPS Detection] Parsing MP4 file:', file.name, 'chunk size:', arrayBuffer.byteLength, 'file size:', file.size);
       
       let offset = 0;
       const maxOffset = Math.min(arrayBuffer.byteLength, chunkSize);
       
+      let movieTimescale = null;
+      let movieDuration = null;
+      let trackTimescale = null;
+      let trackDuration = null;
+      let sampleCount = null;
+      
+      // First pass: find movie header and track information
       while (offset < maxOffset - 8) {
         const size = view.getUint32(offset);
+        if (size === 0 || size > maxOffset) break;
+        
         const type = String.fromCharCode(
           view.getUint8(offset + 4),
           view.getUint8(offset + 5),
@@ -95,11 +108,13 @@ export class MediaManager {
         
         if (type === 'moov') {
           const moovSize = size;
-          const moovEnd = offset + moovSize;
+          const moovEnd = Math.min(offset + moovSize, maxOffset);
           let moovOffset = offset + 8;
           
           while (moovOffset < moovEnd - 8) {
             const atomSize = view.getUint32(moovOffset);
+            if (atomSize === 0 || atomSize > moovEnd - moovOffset) break;
+            
             const atomType = String.fromCharCode(
               view.getUint8(moovOffset + 4),
               view.getUint8(moovOffset + 5),
@@ -107,47 +122,284 @@ export class MediaManager {
               view.getUint8(moovOffset + 7)
             );
             
+            // Parse movie header for timescale and duration
             if (atomType === 'mvhd') {
+              // mvhd (movie header) layout:
+              // size+type(8)
+              // version(1)+flags(3)
+              // version 0:
+              //   creation(4) modification(4) timescale(4) duration(4)
+              // version 1:
+              //   creation(8) modification(8) timescale(4) duration(8)
               const version = view.getUint8(moovOffset + 8);
               let timescaleOffset, durationOffset;
               
               if (version === 1) {
-                timescaleOffset = moovOffset + 20;
-                durationOffset = moovOffset + 28;
+                timescaleOffset = moovOffset + 32;
+                durationOffset = moovOffset + 36;
               } else {
-                timescaleOffset = moovOffset + 12;
-                durationOffset = moovOffset + 16;
+                timescaleOffset = moovOffset + 20;
+                durationOffset = moovOffset + 24;
               }
               
-              const timescale = view.getUint32(timescaleOffset, false);
-              let duration;
+              movieTimescale = view.getUint32(timescaleOffset, false);
               
               if (version === 1) {
                 const durationHigh = view.getUint32(durationOffset, false);
                 const durationLow = view.getUint32(durationOffset + 4, false);
-                duration = (durationHigh * 0x100000000) + durationLow;
+                movieDuration = (durationHigh * 0x100000000) + durationLow;
               } else {
-                duration = view.getUint32(durationOffset, false);
+                movieDuration = view.getUint32(durationOffset, false);
+              }
+            }
+            
+            // Parse track to find video track and sample count
+            if (atomType === 'trak') {
+              const trakSize = atomSize;
+              const trakEnd = Math.min(moovOffset + trakSize, moovEnd);
+              let trakOffset = moovOffset + 8;
+              
+              let isVideoTrack = false;
+              let currentTrackTimescale = null;
+              let currentTrackDuration = null;
+              let currentSampleCount = null;
+              
+              while (trakOffset < trakEnd - 8) {
+                const trakAtomSize = view.getUint32(trakOffset);
+                if (trakAtomSize === 0 || trakAtomSize > trakEnd - trakOffset) break;
+                
+                const trakAtomType = String.fromCharCode(
+                  view.getUint8(trakOffset + 4),
+                  view.getUint8(trakOffset + 5),
+                  view.getUint8(trakOffset + 6),
+                  view.getUint8(trakOffset + 7)
+                );
+                
+                // Parse media header for track timescale and check handler type
+                if (trakAtomType === 'mdia') {
+                  const mdiaSize = trakAtomSize;
+                  const mdiaEnd = Math.min(trakOffset + mdiaSize, trakEnd);
+                  let mdiaOffset = trakOffset + 8;
+                  
+                  while (mdiaOffset < mdiaEnd - 8) {
+                    const mdiaAtomSize = view.getUint32(mdiaOffset);
+                    if (mdiaAtomSize === 0 || mdiaAtomSize > mdiaEnd - mdiaOffset) break;
+                    
+                    const mdiaAtomType = String.fromCharCode(
+                      view.getUint8(mdiaOffset + 4),
+                      view.getUint8(mdiaOffset + 5),
+                      view.getUint8(mdiaOffset + 6),
+                      view.getUint8(mdiaOffset + 7)
+                    );
+                    
+                    // Check handler type to identify video tracks
+                    if (mdiaAtomType === 'hdlr') {
+                      // hdlr atom structure:
+                      // 8 bytes: size + type
+                      // 1 byte: version
+                      // 3 bytes: flags
+                      // 4 bytes: component type (usually 'mhlr')
+                      // 4 bytes: component subtype (this is what we want - 'vide' for video)
+                      // So handler subtype is at offset 8 + 1 + 3 + 4 = 16 from atom start
+                      const hdlrHandlerTypeOffset = mdiaOffset + 16;
+                      if (hdlrHandlerTypeOffset + 4 <= mdiaEnd) {
+                        const handlerType = String.fromCharCode(
+                          view.getUint8(hdlrHandlerTypeOffset),
+                          view.getUint8(hdlrHandlerTypeOffset + 1),
+                          view.getUint8(hdlrHandlerTypeOffset + 2),
+                          view.getUint8(hdlrHandlerTypeOffset + 3)
+                        );
+                        console.log('[FPS Detection] Found handler type:', handlerType);
+                        // Video tracks have handler type 'vide'
+                        if (handlerType === 'vide') {
+                          isVideoTrack = true;
+                          console.log('[FPS Detection] Identified as video track');
+                        }
+                      }
+                    }
+                    
+                    if (mdiaAtomType === 'mdhd') {
+                      // mdhd (media header) layout:
+                      // size+type(8)
+                      // version(1)+flags(3)
+                      // version 0:
+                      //   creation(4) modification(4) timescale(4) duration(4)
+                      // version 1:
+                      //   creation(8) modification(8) timescale(4) duration(8)
+                      const mdhdVersion = view.getUint8(mdiaOffset + 8);
+                      let mdhdTimescaleOffset, mdhdDurationOffset;
+                      
+                      if (mdhdVersion === 1) {
+                        mdhdTimescaleOffset = mdiaOffset + 32;
+                        mdhdDurationOffset = mdiaOffset + 36;
+                      } else {
+                        mdhdTimescaleOffset = mdiaOffset + 20;
+                        mdhdDurationOffset = mdiaOffset + 24;
+                      }
+                      
+                      if (mdhdTimescaleOffset + 4 <= mdiaEnd) {
+                        currentTrackTimescale = view.getUint32(mdhdTimescaleOffset, false);
+                      }
+                      
+                      if (mdhdDurationOffset + (mdhdVersion === 1 ? 8 : 4) <= mdiaEnd) {
+                        if (mdhdVersion === 1) {
+                          const durationHigh = view.getUint32(mdhdDurationOffset, false);
+                          const durationLow = view.getUint32(mdhdDurationOffset + 4, false);
+                          currentTrackDuration = (durationHigh * 0x100000000) + durationLow;
+                        } else {
+                          currentTrackDuration = view.getUint32(mdhdDurationOffset, false);
+                        }
+                      }
+                    }
+                    
+                    // Parse sample table for sample count
+                    if (mdiaAtomType === 'minf') {
+                      const minfSize = mdiaAtomSize;
+                      const minfEnd = Math.min(mdiaOffset + minfSize, mdiaEnd);
+                      let minfOffset = mdiaOffset + 8;
+                      
+                      while (minfOffset < minfEnd - 8) {
+                        const minfAtomSize = view.getUint32(minfOffset);
+                        if (minfAtomSize === 0 || minfAtomSize > minfEnd - minfOffset) break;
+                        
+                        const minfAtomType = String.fromCharCode(
+                          view.getUint8(minfOffset + 4),
+                          view.getUint8(minfOffset + 5),
+                          view.getUint8(minfOffset + 6),
+                          view.getUint8(minfOffset + 7)
+                        );
+                        
+                        if (minfAtomType === 'stbl') {
+                          const stblSize = minfAtomSize;
+                          const stblEnd = Math.min(minfOffset + stblSize, minfEnd);
+                          let stblOffset = minfOffset + 8;
+                          
+                          while (stblOffset < stblEnd - 8) {
+                            const stblAtomSize = view.getUint32(stblOffset);
+                            if (stblAtomSize === 0 || stblAtomSize > stblEnd - stblOffset) break;
+                            
+                            const stblAtomType = String.fromCharCode(
+                              view.getUint8(stblOffset + 4),
+                              view.getUint8(stblOffset + 5),
+                              view.getUint8(stblOffset + 6),
+                              view.getUint8(stblOffset + 7)
+                            );
+                            
+                            // Parse stsz (sample size) atom for sample count
+                            if (stblAtomType === 'stsz') {
+                              const stszVersion = view.getUint8(stblOffset + 8);
+                              if (stszVersion === 0 && stblOffset + 20 <= stblEnd) {
+                                currentSampleCount = view.getUint32(stblOffset + 16, false);
+                                console.log('[FPS Detection] Found sample count in stsz:', currentSampleCount);
+                              }
+                            }
+                            
+                            // Parse stts (time-to-sample) atom to calculate frame rate more accurately
+                            if (stblAtomType === 'stts') {
+                              const sttsVersion = view.getUint8(stblOffset + 8);
+                              if (sttsVersion === 0 && stblOffset + 20 <= stblEnd) {
+                                const entryCount = view.getUint32(stblOffset + 12, false);
+                                console.log('[FPS Detection] Found stts entry count:', entryCount);
+                                
+                                // If we have a single entry with consistent frame timing, we can calculate FPS
+                                if (entryCount === 1 && stblOffset + 20 <= stblEnd) {
+                                  const sampleCount = view.getUint32(stblOffset + 16, false);
+                                  const sampleDelta = view.getUint32(stblOffset + 20, false);
+                                  if (sampleCount > 0 && sampleDelta > 0 && currentTrackTimescale) {
+                                    // Frame rate = timescale / sampleDelta
+                                    const fps = currentTrackTimescale / sampleDelta;
+                                    console.log('[FPS Detection] Calculated FPS from stts:', {
+                                      sampleCount,
+                                      sampleDelta,
+                                      trackTimescale: currentTrackTimescale,
+                                      fps
+                                    });
+                                    if (fps > 0 && fps <= 120 && Math.abs(fps - Math.round(fps)) < 0.1) {
+                                      return Math.round(fps);
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                            
+                            stblOffset += stblAtomSize;
+                          }
+                        }
+                        
+                        minfOffset += minfAtomSize;
+                      }
+                    }
+                    
+                    mdiaOffset += mdiaAtomSize;
+                  }
+                }
+                
+                trakOffset += trakAtomSize;
               }
               
-              if (timescale > 0 && duration > 0) {
-                const fps = timescale / duration;
-                if (fps > 0 && fps <= 120) {
-                  return Math.round(fps);
+              // If we found a video track with sample count, use it
+              if (isVideoTrack && currentSampleCount && currentTrackTimescale && currentTrackDuration) {
+                const durationInSeconds = currentTrackDuration / currentTrackTimescale;
+                if (durationInSeconds > 0 && currentSampleCount > 0) {
+                  const fps = currentSampleCount / durationInSeconds;
+                  console.log('[FPS Detection] Found video track:', {
+                    isVideoTrack,
+                    sampleCount: currentSampleCount,
+                    trackTimescale: currentTrackTimescale,
+                    trackDuration: currentTrackDuration,
+                    durationInSeconds,
+                    calculatedFps: fps
+                  });
+                  if (fps > 0 && fps <= 120) {
+                    return Math.round(fps);
+                  }
                 }
+              } else {
+                console.log('[FPS Detection] Video track found but missing data:', {
+                  isVideoTrack,
+                  sampleCount: currentSampleCount,
+                  trackTimescale: currentTrackTimescale,
+                  trackDuration: currentTrackDuration
+                });
+              }
+              
+              // Store values for fallback (use first track with sample count)
+              if (currentSampleCount && !sampleCount) {
+                sampleCount = currentSampleCount;
+                if (currentTrackTimescale) trackTimescale = currentTrackTimescale;
+                if (currentTrackDuration) trackDuration = currentTrackDuration;
               }
             }
             
             moovOffset += atomSize;
-            if (atomSize === 0) break;
           }
         }
         
         offset += size;
-        if (size === 0) break;
       }
+      
+      // Fallback: if we have movie timescale and duration, try to estimate
+      // This is less accurate but better than the previous wrong calculation
+      if (movieTimescale && movieDuration && sampleCount) {
+        const durationInSeconds = movieDuration / movieTimescale;
+        if (durationInSeconds > 0 && sampleCount > 0) {
+          const fps = sampleCount / durationInSeconds;
+          console.log('[FPS Detection] Using fallback calculation:', {
+            movieTimescale,
+            movieDuration,
+            sampleCount,
+            durationInSeconds,
+            calculatedFps: fps
+          });
+          if (fps > 0 && fps <= 120) {
+            return Math.round(fps);
+          }
+        }
+      }
+      
+      console.log('[FPS Detection] Failed to parse frame rate from MP4 header');
     } catch (error) {
-      console.error('Error parsing MP4 frame rate:', error);
+      console.error('[FPS Detection] Error parsing MP4 frame rate:', error);
     }
     
     return null;
@@ -181,9 +433,12 @@ export class MediaManager {
    * Detect video frame rate
    */
   async detectVideoFrameRate(videoElement, file = null, videoPath = null) {
+    console.log('[FPS Detection] Starting detection, file:', file?.name, 'videoPath:', videoPath);
+    
     if (videoPath) {
       const serverFps = await this.detectFrameRateFromServer(videoPath);
       if (serverFps) {
+        console.log('[FPS Detection] Got FPS from server:', serverFps);
         return serverFps;
       }
     }
@@ -191,29 +446,105 @@ export class MediaManager {
     if (file) {
       const headerFps = await this.parseMP4FrameRate(file);
       if (headerFps) {
+        console.log('[FPS Detection] Got FPS from MP4 header:', headerFps);
         return headerFps;
       }
     }
     
     if (!videoElement) {
+      console.log('[FPS Detection] No video element provided');
       return null;
     }
     
+    // Wait for video to be ready and try to calculate from decoded frames
     try {
+      // Wait for video metadata to load
+      await new Promise(resolve => {
+        if (videoElement.readyState >= 1 && videoElement.duration > 0) {
+          resolve();
+        } else {
+          const checkReady = () => {
+            if (videoElement.readyState >= 1 && videoElement.duration > 0) {
+              videoElement.removeEventListener('loadedmetadata', checkReady);
+              resolve();
+            }
+          };
+          videoElement.addEventListener('loadedmetadata', checkReady);
+          // Timeout after 3 seconds
+          setTimeout(() => {
+            videoElement.removeEventListener('loadedmetadata', checkReady);
+            resolve();
+          }, 3000);
+        }
+      });
+      
+      // Try to get frame count from webkitDecodedFrameCount
       if (videoElement.webkitDecodedFrameCount !== undefined && videoElement.duration) {
+        // Play the video briefly to get accurate frame count
+        const wasPlaying = !videoElement.paused;
+        if (videoElement.paused) {
+          try {
+            await videoElement.play();
+          } catch (e) {
+            console.log('[FPS Detection] Could not play video for frame counting:', e);
+          }
+        }
+        
+        // Wait for frames to decode (at least 1 second or until we have enough frames)
+        let attempts = 0;
+        let lastFrameCount = 0;
+        while (attempts < 20) { // Max 2 seconds
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const currentFrameCount = videoElement.webkitDecodedFrameCount;
+          if (currentFrameCount > lastFrameCount) {
+            lastFrameCount = currentFrameCount;
+            const elapsed = (attempts + 1) * 0.1;
+            if (elapsed >= 1.0 && currentFrameCount > 0) {
+              break;
+            }
+          }
+          attempts++;
+        }
+        
+        // Pause if we started it
+        if (!wasPlaying && !videoElement.paused) {
+          videoElement.pause();
+          videoElement.currentTime = 0;
+        }
+        
         const frameCount = videoElement.webkitDecodedFrameCount;
         const duration = videoElement.duration;
+        const timePlayed = Math.min((attempts + 1) * 0.1, duration);
+        
+        console.log('[FPS Detection] Video element data:', {
+          frameCount,
+          duration,
+          timePlayed,
+          readyState: videoElement.readyState
+        });
+        
+        if (frameCount > 0 && timePlayed > 0) {
+          const calculatedFps = Math.round(frameCount / timePlayed);
+          if (calculatedFps > 0 && calculatedFps <= 120) {
+            console.log('[FPS Detection] Calculated FPS from decoded frames:', calculatedFps);
+            return calculatedFps;
+          }
+        }
+        
+        // Fallback: use duration if we have frame count
         if (frameCount > 0 && duration > 0) {
           const calculatedFps = Math.round(frameCount / duration);
           if (calculatedFps > 0 && calculatedFps <= 120) {
+            console.log('[FPS Detection] Calculated FPS from total frames/duration:', calculatedFps);
             return calculatedFps;
           }
         }
       }
     } catch (e) {
-      // Ignore errors
+      console.error('[FPS Detection] Error in video element detection:', e);
     }
     
+    console.log('[FPS Detection] All methods failed, returning null');
     return null;
   }
   

@@ -769,63 +769,317 @@ app.get('/api/video/framerate', async (req, res) => {
       return res.status(403).json({ error: 'Access denied: path outside project directory' });
     }
     
-    // Check if file exists
+    // Check if file exists and read MP4 header
     const fs = await import('fs');
-    if (!fs.existsSync(resolvedPath)) {
-      return res.status(404).json({ error: 'Video file not found' });
-    }
-    
-    // Use ffprobe to get frame rate
-    // ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1
-    // Try to get ffprobe path from ffmpeg-installer, fall back to system ffprobe
-    let ffprobePath = 'ffprobe';
-    try {
-      // ffmpeg-installer provides both ffmpeg and ffprobe at the same location
-      const ffmpegPath = ffmpegInstaller.path;
-      if (ffmpegPath) {
-        // Replace 'ffmpeg' with 'ffprobe' in the path
-        ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1');
-      }
-    } catch (e) {
-      // Use system ffprobe if installer path not available
-      console.log('Using system ffprobe');
-    }
-    
-    const command = `"${ffprobePath}" -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1 "${resolvedPath}"`;
     
     try {
-      const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
-      
-      if (stderr && !stdout) {
-        console.error('FFprobe error:', stderr);
-        return res.status(500).json({ error: 'Failed to detect frame rate', details: stderr });
+      if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).json({ error: 'Video file not found' });
       }
       
-      const frameRateStr = stdout.trim();
-      if (!frameRateStr || frameRateStr === 'N/A') {
-        return res.status(404).json({ error: 'Frame rate not found in video metadata' });
+      // Parse MP4 header to get frame rate
+      const chunkSize = 512 * 1024; // Read first 512KB (should contain moov atom)
+      const fd = fs.openSync(resolvedPath, 'r');
+      const buffer = Buffer.alloc(chunkSize);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, 0);
+      fs.closeSync(fd);
+      
+      let offset = 0;
+      const maxOffset = Math.min(bytesRead, chunkSize);
+      
+      console.log(`[FPS Detection] Reading MP4 header from ${resolvedPath}, bytes read: ${bytesRead}`);
+      
+      if (bytesRead < 8) {
+        return res.status(500).json({ error: 'File too small to contain MP4 header' });
       }
       
-      // Parse frame rate (can be in format like "30/1" or "30000/1001")
-      const [numerator, denominator] = frameRateStr.split('/').map(Number);
-      if (isNaN(numerator) || isNaN(denominator) || denominator === 0) {
-        return res.status(500).json({ error: 'Invalid frame rate format', value: frameRateStr });
+      let movieTimescale = null;
+      let movieDuration = null;
+      let trackTimescale = null;
+      let trackDuration = null;
+      let sampleCount = null;
+      
+      // Find movie header and track information
+      while (offset < maxOffset - 8) {
+        if (offset + 8 > buffer.length) break;
+        
+        const size = buffer.readUInt32BE(offset);
+        if (size === 0 || size > maxOffset || offset + size > buffer.length) break;
+        
+        const type = buffer.slice(offset + 4, offset + 8).toString('ascii');
+        
+        if (type === 'moov') {
+          const moovSize = size;
+          const moovEnd = Math.min(offset + moovSize, maxOffset);
+          let moovOffset = offset + 8;
+          
+          while (moovOffset < moovEnd - 8) {
+            const atomSize = buffer.readUInt32BE(moovOffset);
+            if (atomSize === 0 || atomSize > moovEnd - moovOffset) break;
+            
+            const atomType = buffer.slice(moovOffset + 4, moovOffset + 8).toString('ascii');
+            
+            // Parse movie header
+            if (atomType === 'mvhd') {
+              // mvhd (movie header) layout:
+              // size+type(8)
+              // version(1)+flags(3)
+              // version 0:
+              //   creation(4) modification(4) timescale(4) duration(4)
+              // version 1:
+              //   creation(8) modification(8) timescale(4) duration(8)
+              const version = buffer[moovOffset + 8];
+              let timescaleOffset, durationOffset;
+
+              if (version === 1) {
+                timescaleOffset = moovOffset + 32;
+                durationOffset = moovOffset + 36;
+              } else {
+                timescaleOffset = moovOffset + 20;
+                durationOffset = moovOffset + 24;
+              }
+
+              movieTimescale = buffer.readUInt32BE(timescaleOffset);
+
+              if (version === 1) {
+                const durationHigh = buffer.readUInt32BE(durationOffset);
+                const durationLow = buffer.readUInt32BE(durationOffset + 4);
+                movieDuration = (durationHigh * 0x100000000) + durationLow;
+              } else {
+                movieDuration = buffer.readUInt32BE(durationOffset);
+              }
+            }
+            
+            // Parse track to find video track
+            if (atomType === 'trak') {
+              const trakSize = atomSize;
+              const trakEnd = Math.min(moovOffset + trakSize, moovEnd);
+              let trakOffset = moovOffset + 8;
+              
+              let isVideoTrack = false;
+              let currentTrackTimescale = null;
+              let currentTrackDuration = null;
+              let currentSampleCount = null;
+              let currentSttsTotalSamples = null;
+              let currentSttsTotalDelta = null; // sum(sampleCount * sampleDelta) in track timescale units
+              
+              while (trakOffset < trakEnd - 8) {
+                const trakAtomSize = buffer.readUInt32BE(trakOffset);
+                if (trakAtomSize === 0 || trakAtomSize > trakEnd - trakOffset) break;
+                
+                const trakAtomType = buffer.slice(trakOffset + 4, trakOffset + 8).toString('ascii');
+                
+                if (trakAtomType === 'mdia') {
+                  const mdiaSize = trakAtomSize;
+                  const mdiaEnd = Math.min(trakOffset + mdiaSize, trakEnd);
+                  let mdiaOffset = trakOffset + 8;
+                  
+                  while (mdiaOffset < mdiaEnd - 8) {
+                    const mdiaAtomSize = buffer.readUInt32BE(mdiaOffset);
+                    if (mdiaAtomSize === 0 || mdiaAtomSize > mdiaEnd - mdiaOffset) break;
+                    
+                    const mdiaAtomType = buffer.slice(mdiaOffset + 4, mdiaOffset + 8).toString('ascii');
+                    
+                    // Check handler type
+                    if (mdiaAtomType === 'hdlr') {
+                      const hdlrHandlerTypeOffset = mdiaOffset + 16;
+                      if (hdlrHandlerTypeOffset + 4 <= mdiaEnd) {
+                        const handlerType = buffer.slice(hdlrHandlerTypeOffset, hdlrHandlerTypeOffset + 4).toString('ascii');
+                        if (handlerType === 'vide') {
+                          isVideoTrack = true;
+                        }
+                      }
+                    }
+                    
+                    if (mdiaAtomType === 'mdhd') {
+                      // mdhd (media header) layout:
+                      // size+type(8)
+                      // version(1)+flags(3)
+                      // version 0:
+                      //   creation(4) modification(4) timescale(4) duration(4)
+                      // version 1:
+                      //   creation(8) modification(8) timescale(4) duration(8)
+                      const mdhdVersion = buffer[mdiaOffset + 8];
+                      let mdhdTimescaleOffset, mdhdDurationOffset;
+
+                      if (mdhdVersion === 1) {
+                        mdhdTimescaleOffset = mdiaOffset + 32;
+                        mdhdDurationOffset = mdiaOffset + 36;
+                      } else {
+                        mdhdTimescaleOffset = mdiaOffset + 20;
+                        mdhdDurationOffset = mdiaOffset + 24;
+                      }
+
+                      if (mdhdTimescaleOffset + 4 <= mdiaEnd) {
+                        currentTrackTimescale = buffer.readUInt32BE(mdhdTimescaleOffset);
+                      }
+
+                      if (mdhdDurationOffset + (mdhdVersion === 1 ? 8 : 4) <= mdiaEnd) {
+                        if (mdhdVersion === 1) {
+                          const durationHigh = buffer.readUInt32BE(mdhdDurationOffset);
+                          const durationLow = buffer.readUInt32BE(mdhdDurationOffset + 4);
+                          currentTrackDuration = (durationHigh * 0x100000000) + durationLow;
+                        } else {
+                          currentTrackDuration = buffer.readUInt32BE(mdhdDurationOffset);
+                        }
+                      }
+                    }
+                    
+                    // Parse sample table
+                    if (mdiaAtomType === 'minf') {
+                      const minfSize = mdiaAtomSize;
+                      const minfEnd = Math.min(mdiaOffset + minfSize, mdiaEnd);
+                      let minfOffset = mdiaOffset + 8;
+                      
+                      while (minfOffset < minfEnd - 8) {
+                        const minfAtomSize = buffer.readUInt32BE(minfOffset);
+                        if (minfAtomSize === 0 || minfAtomSize > minfEnd - minfOffset) break;
+                        
+                        const minfAtomType = buffer.slice(minfOffset + 4, minfOffset + 8).toString('ascii');
+                        
+                        if (minfAtomType === 'stbl') {
+                          const stblSize = minfAtomSize;
+                          const stblEnd = Math.min(minfOffset + stblSize, minfEnd);
+                          let stblOffset = minfOffset + 8;
+                          
+                          while (stblOffset < stblEnd - 8) {
+                            const stblAtomSize = buffer.readUInt32BE(stblOffset);
+                            if (stblAtomSize === 0 || stblAtomSize > stblEnd - stblOffset) break;
+                            
+                            const stblAtomType = buffer.slice(stblOffset + 4, stblOffset + 8).toString('ascii');
+                            
+                            // Parse stsz (sample size) atom
+                            if (stblAtomType === 'stsz') {
+                              const stszVersion = buffer[stblOffset + 8];
+                              if (stszVersion === 0 && stblOffset + 20 <= stblEnd) {
+                                currentSampleCount = buffer.readUInt32BE(stblOffset + 16);
+                              }
+                            }
+                            
+                            if (stblAtomType === 'stts') {
+                              // stts (time-to-sample) atom:
+                              // version/flags (4)
+                              // entry_count (4)
+                              // entries: { sample_count (4), sample_delta (4) } * entry_count
+                              // Use this to compute average FPS reliably, even when mdhd duration differs (edit lists, etc.).
+                              const sttsVersion = buffer[stblOffset + 8];
+                              if (sttsVersion === 0 && stblOffset + 16 <= stblEnd) {
+                                const entryCount = buffer.readUInt32BE(stblOffset + 12);
+                                const entriesStart = stblOffset + 16;
+                                const entriesBytes = entryCount * 8;
+                                if (entriesStart + entriesBytes <= stblEnd) {
+                                  let totalSamples = 0;
+                                  let totalDelta = 0;
+                                  for (let i = 0; i < entryCount; i++) {
+                                    const entryOffset = entriesStart + (i * 8);
+                                    const sc = buffer.readUInt32BE(entryOffset);
+                                    const sd = buffer.readUInt32BE(entryOffset + 4);
+                                    totalSamples += sc;
+                                    totalDelta += sc * sd;
+                                  }
+                                  if (totalSamples > 0 && totalDelta > 0) {
+                                    currentSttsTotalSamples = totalSamples;
+                                    currentSttsTotalDelta = totalDelta;
+                                  }
+                                }
+                              }
+                            }
+                            
+                            stblOffset += stblAtomSize;
+                          }
+                        }
+                        
+                        minfOffset += minfAtomSize;
+                      }
+                    }
+                    
+                    mdiaOffset += mdiaAtomSize;
+                  }
+                }
+                
+                trakOffset += trakAtomSize;
+              }
+              
+              // If we found a video track, calculate FPS from header metadata.
+              if (isVideoTrack && currentTrackTimescale) {
+                // Preferred: derive average FPS from stts (timing table)
+                if (currentSttsTotalSamples && currentSttsTotalDelta) {
+                  const fps = (currentSttsTotalSamples * currentTrackTimescale) / currentSttsTotalDelta;
+                  console.log(`[FPS Detection] Video track FPS (stts):`, {
+                    sttsTotalSamples: currentSttsTotalSamples,
+                    sttsTotalDelta: currentSttsTotalDelta,
+                    trackTimescale: currentTrackTimescale,
+                    fps,
+                    roundedFps: Math.round(fps)
+                  });
+                  if (fps > 0 && fps <= 120) {
+                    return res.json({ fps: Math.round(fps) });
+                  }
+                }
+
+                // Fallback: sampleCount / (mdhdDuration / timescale)
+                if (currentSampleCount && currentTrackDuration) {
+                  const durationInSeconds = currentTrackDuration / currentTrackTimescale;
+                  if (durationInSeconds > 0 && currentSampleCount > 0) {
+                    const fps = currentSampleCount / durationInSeconds;
+                    console.log(`[FPS Detection] Video track FPS (mdhd+stsz):`, {
+                      sampleCount: currentSampleCount,
+                      trackTimescale: currentTrackTimescale,
+                      trackDuration: currentTrackDuration,
+                      durationInSeconds,
+                      fps,
+                      roundedFps: Math.round(fps)
+                    });
+                    if (fps > 0 && fps <= 120) {
+                      return res.json({ fps: Math.round(fps) });
+                    }
+                  }
+                }
+              }
+              
+              // Store for fallback
+              if (currentSampleCount && !sampleCount) {
+                sampleCount = currentSampleCount;
+                if (currentTrackTimescale) trackTimescale = currentTrackTimescale;
+                if (currentTrackDuration) trackDuration = currentTrackDuration;
+              }
+            }
+            
+            moovOffset += atomSize;
+          }
+        }
+        
+        offset += size;
       }
       
-      const fps = numerator / denominator;
-      
-      // Validate fps is reasonable
-      if (fps <= 0 || fps > 120) {
-        return res.status(500).json({ error: 'Frame rate out of valid range', fps });
+      // Fallback: use movie timescale and sample count
+      if (movieTimescale && movieDuration && sampleCount && trackTimescale && trackDuration) {
+        const durationInSeconds = trackDuration / trackTimescale;
+        if (durationInSeconds > 0 && sampleCount > 0) {
+          const fps = sampleCount / durationInSeconds;
+          console.log(`[FPS Detection] Fallback FPS calculation:`, {
+            sampleCount,
+            trackTimescale,
+            trackDuration,
+            durationInSeconds,
+            fps,
+            roundedFps: Math.round(fps)
+          });
+          if (fps > 0 && fps <= 120) {
+            return res.json({ fps: Math.round(fps) });
+          }
+        }
       }
       
-      res.json({ fps: Math.round(fps * 100) / 100, raw: frameRateStr });
-    } catch (execError) {
-      console.error('FFprobe execution error:', execError);
+      console.log(`[FPS Detection] Failed to parse frame rate from MP4 header`);
+      return res.status(404).json({ error: 'Frame rate not found in MP4 header' });
+    } catch (parseError) {
+      console.error('[FPS Detection] Error parsing MP4 header:', parseError);
+      console.error('[FPS Detection] Error stack:', parseError.stack);
       return res.status(500).json({ 
-        error: 'Failed to execute ffprobe', 
-        details: execError.message,
-        hint: 'Make sure ffprobe is installed and accessible'
+        error: 'Failed to parse MP4 header', 
+        details: parseError.message,
+        ...(process.env.NODE_ENV === 'development' && { stack: parseError.stack })
       });
     }
   } catch (error) {

@@ -1545,12 +1545,14 @@ async function parseMP4FrameRate(file) {
             
             if (version === 1) {
               // 64-bit version
-              timescaleOffset = moovOffset + 20;
-              durationOffset = moovOffset + 28;
+              // version+flags(4) + creation(8) + modification(8) => timescale at +32, duration at +36
+              timescaleOffset = moovOffset + 32;
+              durationOffset = moovOffset + 36;
             } else {
               // 32-bit version
-              timescaleOffset = moovOffset + 12;
-              durationOffset = moovOffset + 16;
+              // version+flags(4) + creation(4) + modification(4) => timescale at +20, duration at +24
+              timescaleOffset = moovOffset + 20;
+              durationOffset = moovOffset + 24;
             }
             
             const timescale = view.getUint32(timescaleOffset);
@@ -1602,9 +1604,11 @@ async function parseMP4FrameRate(file) {
                         let trackTimescaleOffset;
                         
                         if (mdhdVersion === 1) {
-                          trackTimescaleOffset = mdhdOffset + 20;
+                          // version+flags(4) + creation(8) + modification(8) => timescale at +32
+                          trackTimescaleOffset = mdhdOffset + 32;
                         } else {
-                          trackTimescaleOffset = mdhdOffset + 12;
+                          // version+flags(4) + creation(4) + modification(4) => timescale at +20
+                          trackTimescaleOffset = mdhdOffset + 20;
                         }
                         
                         const trackTimescale = view.getUint32(trackTimescaleOffset);
