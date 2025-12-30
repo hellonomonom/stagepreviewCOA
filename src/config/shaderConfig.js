@@ -35,7 +35,7 @@ export const shaderConfigs = {
     specular: 0.200
   },
   crowd: {
-    baseColor: [0.039, 0.039, 0.039],
+    baseColor: [0.024, 0.024, 0.024],
     roughness: 1.000,
     specular: 0.000
   },

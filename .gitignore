@@ -10,6 +10,7 @@ dist/
 
 # Deployment configuration (contains sensitive SSH keys)
 deploy.config.json
+deploy-auto.ps1
 
 # IDE
 .vscode/

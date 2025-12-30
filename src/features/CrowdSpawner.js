@@ -565,7 +565,7 @@ export class CrowdSpawner {
     
     if (crowdShaderConfig && crowdShaderConfig.uniforms) {
       // Extract values from shader material uniforms
-      const baseColor = crowdShaderConfig.uniforms.uBaseColor?.value || new THREE.Vector3(0.039, 0.039, 0.039);
+      const baseColor = crowdShaderConfig.uniforms.uBaseColor?.value || new THREE.Vector3(0.024, 0.024, 0.024);
       const roughness = crowdShaderConfig.uniforms.uRoughness?.value ?? 1.000;
       const specular = crowdShaderConfig.uniforms.uSpecular?.value ?? 0.000;
       
@@ -580,7 +580,7 @@ export class CrowdSpawner {
     } else {
       // Fallback to default material (matches shader config)
       crowdMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(0.039, 0.039, 0.039),
+        color: new THREE.Color(0.024, 0.024, 0.024),
         roughness: 1.000,
         metalness: 0.0
       });
