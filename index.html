@@ -357,6 +357,21 @@
                                 <button class="btn btn-sm" id="directionalLightRotResetBtn" style="flex: 1;">Reset Rotation</button>
                             </div>
                         </div>
+                        <div class="control-group">
+                            <div class="control-section-header">Directional Light 2 (Opposite)</div>
+                            <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
+                                <label for="directionalLight2Intensity" class="label" style="flex: 1;">Intensity: <span class="value" id="directionalLight2IntensityValue">0.30</span></label>
+                                <input type="range" id="directionalLight2Intensity" class="slider" min="0" max="5" step="0.1" value="0.3" />
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <div class="control-section-header">Directional Light 1 Intensity (Static)</div>
+                            <div class="text-sm" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">Only active when Dynamic Light is off</div>
+                            <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
+                                <label for="directionalLight1Intensity" class="label" style="flex: 1;">Intensity: <span class="value" id="directionalLight1IntensityValue">0.60</span></label>
+                                <input type="range" id="directionalLight1Intensity" class="slider" min="0" max="5" step="0.1" value="0.6" />
+                            </div>
+                        </div>
                         <div class="text-sm" id="versionInfo" style="font-family: var(--font-family-mono); line-height: 1.6; margin-top: var(--space-xl); word-wrap: break-word; white-space: pre-line;">-</div>
                     </div>
                 </div>

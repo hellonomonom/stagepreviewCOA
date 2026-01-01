@@ -431,9 +431,9 @@ let lightColorSmoothing = 0.15; // Smoothing factor for color transitions (0-1, 
 let lightIntensitySmoothing = 0.15; // Smoothing factor for intensity transitions
 let dynamicLightIntensityMultiplier = 10.0; // Multiplier for intensity (0-100x), default 10x
 let currentLightColor = new THREE.Color(0xffffff);
-let currentLightIntensity = 1.2;
+let currentLightIntensity = 0.6;
 let targetLightColor = new THREE.Color(0xffffff);
-let targetLightIntensity = 1.2;
+let targetLightIntensity = 0.6;
 let analysisCanvas = null;
 let analysisContext = null;
 // Performance optimization: track video time to only update when frame changes
@@ -452,7 +452,7 @@ const initialRotXDeg = THREE.MathUtils.radToDeg(initialElevation);
 const initialRotYDeg = THREE.MathUtils.radToDeg(initialAzimuth);
 const initialRotZDeg = 0; // No roll initially
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Increased intensity
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6); // Default intensity
 // Position light relative to camera pivot
 directionalLight.position.copy(cameraPivotPosition).add(defaultLightOffset);
 directionalLight.castShadow = true;
@@ -460,6 +460,17 @@ directionalLight.castShadow = true;
 directionalLight.target.position.copy(cameraPivotPosition);
 scene.add(directionalLight);
 scene.add(directionalLight.target); // Target must be added to scene
+
+// Second directional light in opposite direction
+const defaultLightOffsetOpposite = defaultLightOffset.clone().negate();
+const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+// Position light in opposite direction relative to camera pivot
+directionalLight2.position.copy(cameraPivotPosition).add(defaultLightOffsetOpposite);
+directionalLight2.castShadow = false; // Only first light casts shadows
+// Set light target to camera pivot position
+directionalLight2.target.position.copy(cameraPivotPosition);
+scene.add(directionalLight2);
+scene.add(directionalLight2.target); // Target must be added to scene
 
 // Create arrow helper to visualize light direction
 // Arrow points in the direction the light is shining (from light position toward camera pivot)
@@ -797,6 +808,35 @@ if (directionalLightRotResetBtn && directionalLightRotXSlider && directionalLigh
   });
 }
 
+// Directional Light 2 Intensity Control
+const directionalLight2IntensitySlider = document.getElementById('directionalLight2Intensity');
+const directionalLight2IntensityValue = document.getElementById('directionalLight2IntensityValue');
+
+if (directionalLight2IntensitySlider && directionalLight2IntensityValue && directionalLight2) {
+  directionalLight2IntensitySlider.addEventListener('input', (e) => {
+    const intensity = parseFloat(e.target.value);
+    directionalLight2IntensityValue.textContent = intensity.toFixed(2);
+    directionalLight2.intensity = intensity;
+  });
+}
+
+// Directional Light 1 Intensity Control (only when dynamic light is off)
+const directionalLight1IntensitySlider = document.getElementById('directionalLight1Intensity');
+const directionalLight1IntensityValue = document.getElementById('directionalLight1IntensityValue');
+
+if (directionalLight1IntensitySlider && directionalLight1IntensityValue && directionalLight) {
+  directionalLight1IntensitySlider.addEventListener('input', (e) => {
+    const intensity = parseFloat(e.target.value);
+    directionalLight1IntensityValue.textContent = intensity.toFixed(2);
+    // Only update if dynamic light is disabled
+    if (!dynamicLightEnabled && directionalLight) {
+      directionalLight.intensity = intensity;
+      currentLightIntensity = intensity;
+      targetLightIntensity = intensity;
+    }
+  });
+}
+
 // Toggle arrow visibility
 const showLightDirectionArrowCheckbox = document.getElementById('showLightDirectionArrow');
 if (showLightDirectionArrowCheckbox && lightDirectionArrow) {
@@ -812,13 +852,14 @@ if (dynamicLightEnabledCheckbox) {
   dynamicLightEnabledCheckbox.addEventListener('change', (e) => {
     dynamicLightEnabled = e.target.checked;
     if (!dynamicLightEnabled && directionalLight) {
-      // Reset to default when disabled
+      // Reset to slider value when disabled
+      const staticIntensity = directionalLight1IntensitySlider ? parseFloat(directionalLight1IntensitySlider.value) : 0.6;
       directionalLight.color.set(0xffffff);
-      directionalLight.intensity = 1.2;
+      directionalLight.intensity = staticIntensity;
       currentLightColor.set(0xffffff);
-      currentLightIntensity = 1.2;
+      currentLightIntensity = staticIntensity;
       targetLightColor.set(0xffffff);
-      targetLightIntensity = 1.2;
+      targetLightIntensity = staticIntensity;
     }
   });
 }
