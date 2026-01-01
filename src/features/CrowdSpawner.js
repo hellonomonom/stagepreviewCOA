@@ -348,6 +348,15 @@ export class CrowdSpawner {
             if (foundGeometry) {
               // Clone geometry to avoid sharing issues
               const geometry = foundGeometry.clone();
+              
+              // Read normals from GLB file - preserve original normals if they exist
+              // Only compute normals if they don't exist in the GLB
+              if (!geometry.attributes.normal) {
+                // If no normals exist in GLB, compute smooth normals
+                geometry.computeVertexNormals();
+              }
+              // If normals exist in GLB, they are already preserved in the cloned geometry
+              
               if (!geometry.boundingBox) {
                 geometry.computeBoundingBox();
               }

@@ -49,6 +49,8 @@ const renderer = createRenderer();
 attachRenderer(renderer);
 const controls = createControls(camera, renderer);
 
+// Create post-processing manager for glow effects
+// Pass ledsGroup to exclude LEDs from bloom effect
 setupResizeHandlers({
   renderer,
   camera,
@@ -412,10 +414,67 @@ function spawnCrowdInstances() {
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased intensity
 scene.add(ambientLight);
 
+
+// Camera pivot position (default camera target)
+const cameraPivotPosition = new THREE.Vector3(0, 7.86, 21);
+
+// Calculate initial light position relative to camera pivot
+// Default: light at (0, 0, 5), pivot at (0, 7.86, 21)
+// Direction from light to pivot: (0, 7.86, 21) - (0, 0, 5) = (0, 7.86, 16)
+// So light should be positioned at: pivot - normalized_direction * distance
+const defaultLightOffset = new THREE.Vector3(0, 0, 5).sub(cameraPivotPosition);
+const directionalLightInitialDistance = defaultLightOffset.length();
+
+// Dynamic light settings
+let dynamicLightEnabled = false;
+let lightColorSmoothing = 0.15; // Smoothing factor for color transitions (0-1, lower = smoother)
+let lightIntensitySmoothing = 0.15; // Smoothing factor for intensity transitions
+let dynamicLightIntensityMultiplier = 10.0; // Multiplier for intensity (0-100x), default 10x
+let currentLightColor = new THREE.Color(0xffffff);
+let currentLightIntensity = 1.2;
+let targetLightColor = new THREE.Color(0xffffff);
+let targetLightIntensity = 1.2;
+let analysisCanvas = null;
+let analysisContext = null;
+// Performance optimization: track video time to only update when frame changes
+let lastVideoTime = -1; // Track video time to only update when frame changes
+
+// Calculate initial rotation angles from default offset direction
+// Normalize the offset to get direction vector
+const defaultDirection = defaultLightOffset.clone().normalize();
+// Calculate Euler angles from direction vector (spherical coordinates)
+// azimuth (Y rotation): angle in XZ plane
+const initialAzimuth = Math.atan2(defaultDirection.x, defaultDirection.z);
+// elevation (X rotation): angle from horizontal plane
+const initialElevation = Math.asin(-defaultDirection.y);
+// Convert to degrees for sliders
+const initialRotXDeg = THREE.MathUtils.radToDeg(initialElevation);
+const initialRotYDeg = THREE.MathUtils.radToDeg(initialAzimuth);
+const initialRotZDeg = 0; // No roll initially
+
 const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Increased intensity
-directionalLight.position.set(0, 0, 5); // Front lighting for better visibility
+// Position light relative to camera pivot
+directionalLight.position.copy(cameraPivotPosition).add(defaultLightOffset);
 directionalLight.castShadow = true;
+// Set light target to camera pivot position
+directionalLight.target.position.copy(cameraPivotPosition);
 scene.add(directionalLight);
+scene.add(directionalLight.target); // Target must be added to scene
+
+// Create arrow helper to visualize light direction
+// Arrow points in the direction the light is shining (from light position toward camera pivot)
+// Positioned at world origin: (0, 0, 0)
+const arrowPosition = new THREE.Vector3(0, 0, 0);
+const lightDirectionArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 0, -1), // Direction (light shines from position toward pivot)
+  arrowPosition,                 // Position at world origin
+  50,                           // Length (10x bigger: 5 * 10 = 50)
+  0xffff00,                     // Color (yellow)
+  8,                            // Head length (10x bigger: 0.8 * 10 = 8)
+  5                             // Head width (10x bigger: 0.5 * 10 = 5)
+);
+lightDirectionArrow.visible = false; // Hidden by default
+scene.add(lightDirectionArrow);
 
 // Texture loading
 const settingsPanel = document.getElementById('settingsPanel');
@@ -525,6 +584,256 @@ if (showStyleShaderPanelCheckbox && styleShaderPanel) {
   });
 }
 
+// Directional Light Rotation Controls
+// Note: Directional lights use position, not rotation. We convert rotation angles to position.
+const directionalLightRotXSlider = document.getElementById('directionalLightRotX');
+const directionalLightRotXValue = document.getElementById('directionalLightRotXValue');
+const directionalLightRotYSlider = document.getElementById('directionalLightRotY');
+const directionalLightRotYValue = document.getElementById('directionalLightRotYValue');
+const directionalLightRotZSlider = document.getElementById('directionalLightRotZ');
+const directionalLightRotZValue = document.getElementById('directionalLightRotZValue');
+const directionalLightRotResetBtn = document.getElementById('directionalLightRotResetBtn');
+
+// Function to update light position from rotation angles
+function updateDirectionalLightPosition() {
+  if (!directionalLight) return;
+  
+  const rotX = directionalLightRotXSlider ? THREE.MathUtils.degToRad(parseFloat(directionalLightRotXSlider.value)) : 0;
+  const rotY = directionalLightRotYSlider ? THREE.MathUtils.degToRad(parseFloat(directionalLightRotYSlider.value)) : 0;
+  const rotZ = directionalLightRotZSlider ? THREE.MathUtils.degToRad(parseFloat(directionalLightRotZSlider.value)) : 0;
+  
+  // Create a direction vector from rotation angles
+  // Using spherical coordinates: azimuth (Y rotation) and elevation (X rotation)
+  const distance = directionalLightInitialDistance;
+  
+  // Apply rotations in order: Y (azimuth around Y axis), X (elevation), Z (roll)
+  // Start with direction pointing along negative Z (toward camera from front)
+  const euler = new THREE.Euler(rotX, rotY, rotZ, 'YXZ');
+  const direction = new THREE.Vector3(0, 0, -1); // Start pointing toward camera (negative Z)
+  direction.applyEuler(euler);
+  direction.multiplyScalar(distance);
+  
+  // Position light relative to camera pivot (so rotations are around the pivot point)
+  const lightPosition = new THREE.Vector3()
+    .copy(cameraPivotPosition)
+    .add(direction);
+  
+  // Set light position (light points from position toward camera pivot)
+  directionalLight.position.copy(lightPosition);
+  // Ensure light target stays at camera pivot
+  directionalLight.target.position.copy(cameraPivotPosition);
+  
+  // Update arrow helper to show light direction
+  // Arrow points in the direction the light is shining (from light position toward camera pivot)
+  if (lightDirectionArrow) {
+    // Calculate direction from light position toward camera pivot
+    const lightDirection = new THREE.Vector3()
+      .subVectors(cameraPivotPosition, directionalLight.position)
+      .normalize();
+    lightDirectionArrow.setDirection(lightDirection);
+  }
+}
+
+// Function to analyze video/image and update light color and intensity
+function updateDynamicLight() {
+  if (!mediaManager || !directionalLight) return;
+  
+  // Get the texture from the material
+  const texture = material?.uniforms?.uTexture?.value;
+  if (!texture || !texture.image) return;
+  
+  const img = texture.image;
+  
+  // Performance: Check if video frame has changed (for videos)
+  if (img.videoWidth) {
+    const videoElement = mediaManager.getCurrentVideoElement();
+    if (videoElement) {
+      const currentTime = videoElement.currentTime;
+      // Only update if video time changed (new frame)
+      if (Math.abs(currentTime - lastVideoTime) < 0.01) {
+        // Frame hasn't changed, just smooth existing values
+        currentLightColor.lerp(targetLightColor, lightColorSmoothing);
+        currentLightIntensity = THREE.MathUtils.lerp(
+          currentLightIntensity,
+          targetLightIntensity,
+          lightIntensitySmoothing
+        );
+        directionalLight.color.copy(currentLightColor);
+        directionalLight.intensity = currentLightIntensity;
+        return;
+      }
+      lastVideoTime = currentTime;
+    }
+  }
+  
+  // Initialize analysis canvas if needed
+  if (!analysisCanvas) {
+    analysisCanvas = document.createElement('canvas');
+    analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  
+  // Get image dimensions
+  const width = img.videoWidth || img.width || img.naturalWidth || 256;
+  const height = img.videoHeight || img.height || img.naturalHeight || 256;
+  
+  if (width === 0 || height === 0) return;
+  
+  // Performance: Use small sample size (32x32 pixels)
+  const sampleSize = 32;
+  
+  // Performance: Only resize canvas if dimensions changed
+  if (analysisCanvas.width !== sampleSize || analysisCanvas.height !== sampleSize) {
+    analysisCanvas.width = sampleSize;
+    analysisCanvas.height = sampleSize;
+  }
+  
+  try {
+    // Draw the image/video frame to canvas
+    analysisContext.drawImage(img, 0, 0, width, height, 0, 0, sampleSize, sampleSize);
+    
+    // Get image data
+    const imageData = analysisContext.getImageData(0, 0, sampleSize, sampleSize);
+    const data = imageData.data;
+    
+    // Performance: Sample every 4th pixel instead of all pixels (4x faster)
+    let r = 0, g = 0, b = 0, brightness = 0;
+    let pixelCount = 0;
+    const stride = 4; // Sample every 4th pixel
+    
+    for (let i = 0; i < data.length; i += stride * 4) {
+      r += data[i];     // Red
+      g += data[i + 1]; // Green
+      b += data[i + 2]; // Blue
+      // Calculate brightness using luminance formula
+      brightness += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+      pixelCount++;
+    }
+    
+    // Average the values
+    if (pixelCount > 0) {
+      r /= pixelCount;
+      g /= pixelCount;
+      b /= pixelCount;
+      brightness /= pixelCount;
+    }
+    
+    // Convert to 0-1 range for Three.js colors
+    const targetR = r / 255;
+    const targetG = g / 255;
+    const targetB = b / 255;
+    
+    // Set target color
+    targetLightColor.setRGB(targetR, targetG, targetB);
+    
+    // Calculate intensity based on brightness (range: 0.5 to 2.0)
+    // Apply intensity multiplier
+    targetLightIntensity = (0.5 + (brightness * 1.5)) * dynamicLightIntensityMultiplier;
+    
+    // Smoothly interpolate current values toward target values
+    currentLightColor.lerp(targetLightColor, lightColorSmoothing);
+    currentLightIntensity = THREE.MathUtils.lerp(
+      currentLightIntensity,
+      targetLightIntensity,
+      lightIntensitySmoothing
+    );
+    
+    // Update directional light
+    directionalLight.color.copy(currentLightColor);
+    directionalLight.intensity = currentLightIntensity;
+    
+  } catch (error) {
+    // Silently fail if we can't read the image (CORS, etc.)
+    // console.warn('Could not analyze image for dynamic light:', error);
+  }
+}
+
+// Initialize sliders with calculated initial rotation values
+if (directionalLightRotXSlider) {
+  directionalLightRotXSlider.value = initialRotXDeg.toFixed(1);
+  if (directionalLightRotXValue) directionalLightRotXValue.textContent = initialRotXDeg.toFixed(2);
+}
+if (directionalLightRotYSlider) {
+  directionalLightRotYSlider.value = initialRotYDeg.toFixed(1);
+  if (directionalLightRotYValue) directionalLightRotYValue.textContent = initialRotYDeg.toFixed(2);
+}
+if (directionalLightRotZSlider) {
+  directionalLightRotZSlider.value = initialRotZDeg.toFixed(1);
+  if (directionalLightRotZValue) directionalLightRotZValue.textContent = initialRotZDeg.toFixed(2);
+}
+
+if (directionalLightRotXSlider && directionalLightRotXValue && directionalLight) {
+  directionalLightRotXSlider.addEventListener('input', (e) => {
+    const degrees = parseFloat(e.target.value);
+    directionalLightRotXValue.textContent = degrees.toFixed(2);
+    updateDirectionalLightPosition();
+  });
+}
+
+if (directionalLightRotYSlider && directionalLightRotYValue && directionalLight) {
+  directionalLightRotYSlider.addEventListener('input', (e) => {
+    const degrees = parseFloat(e.target.value);
+    directionalLightRotYValue.textContent = degrees.toFixed(2);
+    updateDirectionalLightPosition();
+  });
+}
+
+if (directionalLightRotZSlider && directionalLightRotZValue && directionalLight) {
+  directionalLightRotZSlider.addEventListener('input', (e) => {
+    const degrees = parseFloat(e.target.value);
+    directionalLightRotZValue.textContent = degrees.toFixed(2);
+    updateDirectionalLightPosition();
+  });
+}
+
+if (directionalLightRotResetBtn && directionalLightRotXSlider && directionalLightRotYSlider && directionalLightRotZSlider) {
+  directionalLightRotResetBtn.addEventListener('click', () => {
+    directionalLightRotXSlider.value = initialRotXDeg.toFixed(1);
+    directionalLightRotYSlider.value = initialRotYDeg.toFixed(1);
+    directionalLightRotZSlider.value = initialRotZDeg.toFixed(1);
+    if (directionalLightRotXValue) directionalLightRotXValue.textContent = initialRotXDeg.toFixed(2);
+    if (directionalLightRotYValue) directionalLightRotYValue.textContent = initialRotYDeg.toFixed(2);
+    if (directionalLightRotZValue) directionalLightRotZValue.textContent = initialRotZDeg.toFixed(2);
+    updateDirectionalLightPosition(); // Update light and arrow when resetting
+  });
+}
+
+// Toggle arrow visibility
+const showLightDirectionArrowCheckbox = document.getElementById('showLightDirectionArrow');
+if (showLightDirectionArrowCheckbox && lightDirectionArrow) {
+  showLightDirectionArrowCheckbox.addEventListener('change', (e) => {
+    lightDirectionArrow.visible = e.target.checked;
+  });
+}
+
+// Toggle dynamic light
+const dynamicLightEnabledCheckbox = document.getElementById('dynamicLightEnabled');
+if (dynamicLightEnabledCheckbox) {
+  dynamicLightEnabledCheckbox.checked = dynamicLightEnabled; // Initialize checkbox from variable
+  dynamicLightEnabledCheckbox.addEventListener('change', (e) => {
+    dynamicLightEnabled = e.target.checked;
+    if (!dynamicLightEnabled && directionalLight) {
+      // Reset to default when disabled
+      directionalLight.color.set(0xffffff);
+      directionalLight.intensity = 1.2;
+      currentLightColor.set(0xffffff);
+      currentLightIntensity = 1.2;
+      targetLightColor.set(0xffffff);
+      targetLightIntensity = 1.2;
+    }
+  });
+}
+
+// Dynamic light intensity multiplier slider
+const dynamicLightIntensityMultiplierSlider = document.getElementById('dynamicLightIntensityMultiplier');
+const dynamicLightIntensityMultiplierValue = document.getElementById('dynamicLightIntensityMultiplierValue');
+if (dynamicLightIntensityMultiplierSlider && dynamicLightIntensityMultiplierValue) {
+  dynamicLightIntensityMultiplierSlider.addEventListener('input', (e) => {
+    const multiplier = parseFloat(e.target.value);
+    dynamicLightIntensityMultiplierValue.textContent = multiplier.toFixed(1);
+    dynamicLightIntensityMultiplier = multiplier; // Use value directly as multiplier (0-100x)
+  });
+}
+
 // Helper function to handle toggle button click/touch
 function handleToggleButton(button, panel, burgerMenu = null) {
   if (!button || !panel) return;
@@ -625,7 +934,7 @@ function updateShaderUniforms(shaderType, uniformName, value) {
   materialReferences[shaderType].forEach(material => {
     if (!material) return;
     
-    // Handle shader materials with uniforms (PBR shader)
+    // Handle shader materials with uniforms
     if (material.uniforms && material.uniforms[uniformName]) {
       if (uniformName === 'uBaseColor') {
         material.uniforms[uniformName].value.set(...value);
@@ -662,9 +971,13 @@ function syncControlsToShaderValues(shaderType, material) {
   // Handle shader materials with uniforms
   let baseColor, roughness, specular;
   if (material.uniforms) {
-    baseColor = material.uniforms.uBaseColor.value;
-    roughness = material.uniforms.uRoughness.value;
-    specular = material.uniforms.uSpecular.value;
+    if (material.uniforms.uBaseColor) {
+      baseColor = material.uniforms.uBaseColor.value;
+      roughness = material.uniforms.uRoughness ? material.uniforms.uRoughness.value : 0.5;
+      specular = material.uniforms.uSpecular ? material.uniforms.uSpecular.value : 0.5;
+    } else {
+      return; // Unknown uniform structure
+    }
   }
   // Handle MeshStandardMaterial (used for crowd)
   else if (material instanceof THREE.MeshStandardMaterial) {
@@ -714,13 +1027,14 @@ function syncControlsToShaderValues(shaderType, material) {
     colorPicker.value = hex;
   }
   
-  if (roughnessSlider) {
+  // Update roughness and specular sliders
+  if (roughnessSlider && roughness !== undefined) {
     roughnessSlider.value = roughness.toFixed(3);
     const valueEl = document.getElementById(`${shaderType}RoughnessValue`);
     if (valueEl) valueEl.textContent = roughness.toFixed(3);
   }
   
-  if (specularSlider) {
+  if (specularSlider && specular !== undefined) {
     specularSlider.value = specular.toFixed(3);
     const valueEl = document.getElementById(`${shaderType}SpecularValue`);
     if (valueEl) valueEl.textContent = specular.toFixed(3);
@@ -2751,7 +3065,8 @@ startAnimationLoop({
   camera,
   onFrame: () => {
     // Update controls (only if not in VR mode)
-    if (controls && (!vrManager || !vrManager.getIsVRActive())) {
+    const isVRActive = vrManager ? vrManager.getIsVRActive() : false;
+    if (controls && !isVRActive) {
       controls.update();
       
       // Limit camera position to never go below 1.2m above ground
@@ -2787,6 +3102,11 @@ startAnimationLoop({
       if (videoElement && isFinite(videoElement.duration) && videoElement.duration > 0) {
         updateFrameInfo(videoElement);
       }
+    }
+
+    // Update dynamic light based on video/image content
+    if (dynamicLightEnabled && directionalLight && mediaManager) {
+      updateDynamicLight();
     }
   },
 });

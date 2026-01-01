@@ -753,7 +753,8 @@ export class MediaManager {
       playPromise.then(() => {
         if (this.overlayVideo) {
           this.overlayVideo.play().catch(err => {
-            console.error('Error playing overlay video:', err);
+            // Silently ignore autoplay/power saving errors - these are expected browser behaviors
+            // console.error('Error playing overlay video:', err);
           });
         }
         if (this.updatePlayPauseButton) this.updatePlayPauseButton();
@@ -1310,7 +1311,8 @@ export class MediaManager {
       this.overlayVideo.style.display = 'block';
       // Ensure overlay video plays
       this.overlayVideo.play().catch(err => {
-        console.warn('Overlay video play error:', err);
+        // Silently ignore autoplay/power saving errors - these are expected browser behaviors
+        // console.warn('Overlay video play error:', err);
       });
     }
     if (this.overlayImage) {

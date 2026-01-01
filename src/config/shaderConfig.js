@@ -25,8 +25,8 @@ export const shaderConfigs = {
     specular: 0.211
   },
   floor: {
-    baseColor: [0.102, 0.102, 0.102],
-    roughness: 0.900,
+    baseColor: [0.039, 0.039, 0.039],
+    roughness: 1.000,
     specular: 0.000
   },
   roof: {
@@ -35,7 +35,7 @@ export const shaderConfigs = {
     specular: 0.200
   },
   crowd: {
-    baseColor: [0.024, 0.024, 0.024],
+    baseColor: [0.031, 0.031, 0.031],
     roughness: 1.000,
     specular: 0.000
   },

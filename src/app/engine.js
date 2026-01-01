@@ -71,6 +71,7 @@ export function startAnimationLoop({ renderer, scene, camera, onFrame }) {
     if (typeof onFrame === 'function') {
       onFrame();
     }
+    
     renderer.render(scene, camera);
   }
 
