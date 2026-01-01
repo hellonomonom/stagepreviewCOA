@@ -151,6 +151,10 @@ meshLoader.setCallbacks({
     // Initialize crowd spawner when floor is loaded
     if (!crowdSpawner) {
       crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
+      // Update camera controls with crowd spawner reference
+      if (cameraControls) {
+        cameraControls.setCrowdSpawner(crowdSpawner);
+      }
     } else {
       crowdSpawner.setFloorMesh(floorMesh);
     }
@@ -372,6 +376,10 @@ async function spawnCrowdCubes() {
       return;
     }
     crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
+    // Update camera controls with crowd spawner reference
+    if (cameraControls) {
+      cameraControls.setCrowdSpawner(crowdSpawner);
+    }
   }
   
   const slider = document.getElementById('crowdInstanceCountSlider');
@@ -393,6 +401,10 @@ function spawnCrowdInstances() {
       return;
     }
     crowdSpawner = new CrowdSpawner(scene, floorMesh, shaderMaterials, materialReferences);
+    // Update camera controls with crowd spawner reference
+    if (cameraControls) {
+      cameraControls.setCrowdSpawner(crowdSpawner);
+    }
   }
   
   const slider = document.getElementById('crowdInstanceCountSlider');
@@ -2973,7 +2985,7 @@ if (textureInput) {
 let cameraControls = null;
 
 function initializeCameraControls() {
-  cameraControls = new CameraControls(camera, controls);
+  cameraControls = new CameraControls(camera, controls, crowdSpawner);
   cameraControls.init();
   
   // Initialize SceneControls after DOM is ready

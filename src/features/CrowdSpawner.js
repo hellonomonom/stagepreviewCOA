@@ -310,6 +310,21 @@ export class CrowdSpawner {
   }
   
   /**
+   * Get a random position from the cached spawn positions
+   * @returns {Object|null} Random position {x, y, z} or null if no positions available
+   */
+  getRandomSpawnPosition() {
+    if (!this.cachedSpawnPositions || this.cachedSpawnPositions.length === 0) {
+      console.warn('[CrowdSpawner] No cached spawn positions available');
+      return null;
+    }
+    
+    const randomIndex = Math.floor(Math.random() * this.cachedSpawnPositions.length);
+    const pos = this.cachedSpawnPositions[randomIndex];
+    return { x: pos.x, y: pos.y, z: pos.z };
+  }
+  
+  /**
    * Pre-load all crowd meshes
    * @returns {Promise} Promise that resolves when all meshes are loaded
    */

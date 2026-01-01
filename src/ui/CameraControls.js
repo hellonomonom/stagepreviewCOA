@@ -6,9 +6,10 @@
 import { cameraPositions, DEFAULT_CAMERA_POSITION_INDEX } from '../config/cameraPresets.js';
 
 export class CameraControls {
-  constructor(camera, controls) {
+  constructor(camera, controls, crowdSpawner = null) {
     this.camera = camera;
     this.controls = controls;
+    this.crowdSpawner = crowdSpawner;
     this.storedCameraState = null;
     
     // DOM Elements
@@ -186,6 +187,52 @@ Target: (${target.x}, ${target.y}, ${target.z})`;
   }
   
   /**
+   * Set crowd spawner reference
+   * @param {Object} crowdSpawner - CrowdSpawner instance
+   */
+  setCrowdSpawner(crowdSpawner) {
+    this.crowdSpawner = crowdSpawner;
+  }
+  
+  /**
+   * Set camera to a random position on the crowd spawning mesh
+   * Uses the same height as the crowd camera preset (y = 1.11)
+   */
+  setRandomCrowdPosition() {
+    if (!this.crowdSpawner) {
+      console.warn('[CameraControls] CrowdSpawner not available, falling back to preset');
+      this.setCameraPosition(2); // Fallback to original CAM A preset
+      return;
+    }
+    
+    const randomPos = this.crowdSpawner.getRandomSpawnPosition();
+    if (!randomPos) {
+      console.warn('[CameraControls] Could not get random spawn position, falling back to preset');
+      this.setCameraPosition(2); // Fallback to original CAM A preset
+      return;
+    }
+    
+    // Get the crowd camera height (index 1, y = 1.11)
+    const crowdCameraHeight = cameraPositions[1].position.y;
+    
+    // Set camera position at random location with crowd camera height
+    this.camera.position.set(randomPos.x, crowdCameraHeight, randomPos.z);
+    
+    // Set target to look at the stage center (similar to crowd camera target)
+    // Using the crowd camera target as reference: { x: 0.67, y: 2.81, z: 0.15 }
+    this.controls.target.set(0.67, 2.81, 0.15);
+    
+    // Look at the target
+    this.camera.lookAt(0.67, 2.81, 0.15);
+    
+    // Update controls to apply changes immediately
+    this.controls.update();
+    
+    // Update debug display
+    this.updateCameraDebug();
+  }
+  
+  /**
    * Load stored camera state
    */
   loadCameraState() {
@@ -282,7 +329,7 @@ Target: (${target.x}, ${target.y}, ${target.z})`;
       this.cameraPos2Btn.addEventListener('click', () => this.setCameraPosition(1));
     }
     if (this.cameraPos3Btn) {
-      this.cameraPos3Btn.addEventListener('click', () => this.setCameraPosition(2));
+      this.cameraPos3Btn.addEventListener('click', () => this.setRandomCrowdPosition());
     }
     if (this.cameraPos4Btn) {
       this.cameraPos4Btn.addEventListener('click', () => this.setCameraPosition(3));
