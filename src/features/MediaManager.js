@@ -15,6 +15,7 @@ export class MediaManager {
     this.updateLEDShaders = options.updateLEDShaders;
     this.overlayVideo = options.overlayVideo;
     this.overlayImage = options.overlayImage;
+    this.overlayComposite = options.overlayComposite;
     this.mapping = options.mapping;
     this.frameInfo = options.frameInfo;
     this.stillInfo = options.stillInfo;
@@ -31,6 +32,8 @@ export class MediaManager {
     this.updateStillInfo = options.updateStillInfo;
     this.videoAssetSelect = options.videoAssetSelect;
     this.adjustMappingAspectRatioCallback = options.adjustMappingAspectRatio;
+    this.updateCompositeOverlay = options.updateCompositeOverlay;
+    this.updateOverlayVideoTransform = options.updateOverlayVideoTransform;
     
     // OverlayManager reference (set after initialization)
     this.overlayManager = null;
@@ -702,27 +705,53 @@ export class MediaManager {
       this.overlayImage.style.display = 'none';
     }
     
+    // Update composite overlay when overlay video is shown
+    if (this.updateCompositeOverlay && typeof this.updateCompositeOverlay === 'function') {
+      this.updateCompositeOverlay();
+    }
+    
     // Adjust aspect ratio
     const handleVideoMetadata = () => {
       if (video.videoWidth && video.videoHeight) {
         this.adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
       }
+      // Update overlay video transform when video metadata is loaded
+      if (this.updateOverlayVideoTransform && typeof this.updateOverlayVideoTransform === 'function') {
+        // Use setTimeout to ensure video dimensions are available
+        setTimeout(() => {
+          this.updateOverlayVideoTransform();
+        }, 0);
+      }
     };
     video.addEventListener('loadedmetadata', handleVideoMetadata);
     if (video.readyState >= 1 && video.videoWidth && video.videoHeight) {
       this.adjustMappingAspectRatio(video.videoWidth, video.videoHeight);
+      // Update overlay video transform if already loaded
+      if (this.updateOverlayVideoTransform && typeof this.updateOverlayVideoTransform === 'function') {
+        setTimeout(() => {
+          this.updateOverlayVideoTransform();
+        }, 0);
+      }
     }
     
-    // Sync overlay video
-    const syncOverlay = () => {
-      if (video.readyState >= 2 && this.overlayVideo) {
-        this.overlayVideo.currentTime = video.currentTime;
-        if (this.updateFrameInfo) {
-          this.updateFrameInfo(video);
+    // Also update overlay video transform when overlay video metadata loads
+    if (this.overlayVideo) {
+      const handleOverlayVideoMetadata = () => {
+        if (this.updateOverlayVideoTransform && typeof this.updateOverlayVideoTransform === 'function') {
+          setTimeout(() => {
+            this.updateOverlayVideoTransform();
+          }, 0);
         }
+      };
+      this.overlayVideo.addEventListener('loadedmetadata', handleOverlayVideoMetadata);
+      if (this.overlayVideo.readyState >= 1) {
+        setTimeout(() => {
+          if (this.updateOverlayVideoTransform && typeof this.updateOverlayVideoTransform === 'function') {
+            this.updateOverlayVideoTransform();
+          }
+        }, 0);
       }
-    };
-    video.addEventListener('timeupdate', syncOverlay);
+    }
     
     // Show UI elements
     if (this.showMappingCheckbox && this.showMappingCheckbox.checked && this.mapping) {
@@ -752,10 +781,23 @@ export class MediaManager {
     if (playPromise !== undefined) {
       playPromise.then(() => {
         if (this.overlayVideo) {
-          this.overlayVideo.play().catch(err => {
-            // Silently ignore autoplay/power saving errors - these are expected browser behaviors
-            // console.error('Error playing overlay video:', err);
-          });
+          // Sync overlay video start time with main video once when starting playback
+          // This allows both videos to play independently in realtime after initial sync
+          const syncAndPlayOverlay = () => {
+            if (this.overlayVideo.readyState >= 2 && video.readyState >= 2) {
+              this.overlayVideo.currentTime = video.currentTime;
+            }
+            this.overlayVideo.play().catch(err => {
+              // Silently ignore autoplay/power saving errors - these are expected browser behaviors
+              // console.error('Error playing overlay video:', err);
+            });
+          };
+          
+          if (this.overlayVideo.readyState >= 2) {
+            syncAndPlayOverlay();
+          } else {
+            this.overlayVideo.addEventListener('loadeddata', syncAndPlayOverlay, { once: true });
+          }
         }
         if (this.updatePlayPauseButton) this.updatePlayPauseButton();
         if (this.updateMuteButton) this.updateMuteButton();
@@ -945,6 +987,10 @@ export class MediaManager {
           if (this.overlayVideo) {
             this.overlayVideo.style.display = 'none';
           }
+          // Hide composite overlay when overlay video is hidden
+          if (this.overlayComposite) {
+            this.overlayComposite.style.display = 'none';
+          }
           
           if (this.frameInfo) this.frameInfo.classList.remove('active');
           if (this.timelineContainer) this.timelineContainer.classList.remove('active');
@@ -1040,6 +1086,10 @@ export class MediaManager {
         }
         if (this.overlayVideo) {
           this.overlayVideo.style.display = 'none';
+        }
+        // Hide composite overlay when overlay video is hidden
+        if (this.overlayComposite) {
+          this.overlayComposite.style.display = 'none';
         }
         
         if (this.frameInfo) this.frameInfo.classList.remove('active');
@@ -1309,6 +1359,10 @@ export class MediaManager {
       this.overlayVideo.playsInline = true;
       this.overlayVideo.setAttribute('playsinline', '');
       this.overlayVideo.style.display = 'block';
+      // Update composite overlay when overlay video is shown
+      if (this.updateCompositeOverlay && typeof this.updateCompositeOverlay === 'function') {
+        this.updateCompositeOverlay();
+      }
       // Ensure overlay video plays
       this.overlayVideo.play().catch(err => {
         // Silently ignore autoplay/power saving errors - these are expected browser behaviors

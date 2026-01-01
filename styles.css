@@ -1210,23 +1210,33 @@ canvas {
    Mapping Overlay
    ============================================ */
 .mapping-overlay {
+    /* Floatable / draggable state */
+    --mapping-scale: 1;
+    --mapping-dx: 0px;
+    --mapping-dy: 0px;
+
     position: fixed;
     bottom: var(--space-xl);
     left: 50%;
-    transform: translateX(-50%) scale(1);
+    transform: translateX(-50%) translate(var(--mapping-dx), var(--mapping-dy)) scale(var(--mapping-scale));
     transform-origin: center bottom;
     width: 320px;
     height: 180px;
-    background: var(--color-bg-panel);
+    background: #000000;
     border-radius: var(--radius-xl);
     overflow: hidden;
     z-index: var(--z-overlay);
     display: none;
     box-shadow: var(--shadow-lg);
+    cursor: grab;
 }
 
 .mapping-overlay.active {
     display: block;
+}
+
+.mapping-overlay.dragging {
+    cursor: grabbing;
 }
 
 .mapping-overlay video,
@@ -1235,6 +1245,19 @@ canvas {
     height: 100%;
     object-fit: contain;
     object-position: center;
+}
+
+.overlay-composite {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: screen;
 }
 
 /* ============================================
@@ -1265,9 +1288,14 @@ canvas {
    Debug Components
    ============================================ */
 .debug-container {
+    /* Floatable / draggable state */
+    --debug-dx: 0px;
+    --debug-dy: 0px;
+
     position: fixed;
     top: var(--space-xl);
     right: var(--space-xl);
+    transform: translate(var(--debug-dx), var(--debug-dy));
     width: 320px;
     height: 180px;
     background: var(--color-bg-panel);
@@ -1276,10 +1304,15 @@ canvas {
     z-index: var(--z-overlay);
     display: none;
     box-shadow: var(--shadow-lg);
+    cursor: grab;
 }
 
 .debug-container.active {
     display: block;
+}
+
+.debug-container.dragging {
+    cursor: grabbing;
 }
 
 .debug-container video {

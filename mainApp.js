@@ -1298,6 +1298,82 @@ loadingManager.addListener('ui', () => {
   }
 });
 
+// Function to update composite overlay based on mapping type
+function updateCompositeOverlay() {
+  if (!overlayComposite) return;
+  
+  let overlayPath = null;
+  if (currentMappingType === 'renderOption1' || currentMappingType === 'renderOption1NoFront') {
+    overlayPath = '/assets/textures/Overlay_Option1_RGB_v006.png';
+  } else if (currentMappingType === 'renderOption2WithFront' || currentMappingType === 'renderOption2NoFront') {
+    overlayPath = '/assets/textures/Overlay_Option2_RGB_v005.png';
+  }
+  
+  // Only show composite overlay if overlay video is visible and we have a valid overlay path
+  if (overlayPath && overlayVideo && overlayVideo.style.display === 'block') {
+    overlayComposite.src = overlayPath;
+    overlayComposite.style.display = 'block';
+  } else {
+    overlayComposite.style.display = 'none';
+  }
+}
+
+// Function to update overlay video transform based on texture scale and offset
+function updateOverlayVideoTransform() {
+  if (!overlayVideo || !material || !material.uniforms) return;
+  
+  const textureScale = material.uniforms.uTextureScale ? material.uniforms.uTextureScale.value : 1.0;
+  const textureOffsetU = material.uniforms.uTextureOffsetU ? material.uniforms.uTextureOffsetU.value : 0.0;
+  const textureOffsetV = material.uniforms.uTextureOffsetV ? material.uniforms.uTextureOffsetV.value : 0.0;
+  
+  // Get video dimensions
+  const videoWidth = overlayVideo.videoWidth || overlayVideo.clientWidth;
+  const videoHeight = overlayVideo.videoHeight || overlayVideo.clientHeight;
+  const containerWidth = overlayVideo.clientWidth;
+  const containerHeight = overlayVideo.clientHeight;
+  
+  if (videoWidth === 0 || videoHeight === 0 || containerWidth === 0 || containerHeight === 0) {
+    return;
+  }
+  
+  // Calculate the actual displayed size (object-fit: contain)
+  const videoAspect = videoWidth / videoHeight;
+  const containerAspect = containerWidth / containerHeight;
+  
+  let displayedWidth, displayedHeight;
+  if (videoAspect > containerAspect) {
+    // Video is wider - fit to width
+    displayedWidth = containerWidth;
+    displayedHeight = containerWidth / videoAspect;
+  } else {
+    // Video is taller - fit to height
+    displayedHeight = containerHeight;
+    displayedWidth = containerHeight * videoAspect;
+  }
+  
+  // Match shader order (updated): offset FIRST (U inverted), THEN scale from center
+  // Shader:
+  //   offsetUv = vUv + vec2(-uTextureOffsetU, uTextureOffsetV)
+  //   scaledUv = (offsetUv - 0.5) / uTextureScale + 0.5
+  //
+  // DOM preview equivalent: translate (offset) first, then scale.
+  // Note: positive uTextureOffsetU should move the image right; positive uTextureOffsetV should move the image up.
+  const cssScale = textureScale;
+  
+  // Convert UV offsets (0-1) to pixels in the displayed video dimensions.
+  // U is inverted in shader sampling, which corresponds to translating the image RIGHT by +offsetU.
+  // V is not inverted, and canvas/CSS Y+ is down, so translate UP by -offsetV.
+  const offsetXPixels = textureOffsetU * displayedWidth;
+  const offsetYPixels = -textureOffsetV * displayedHeight;
+  
+  // Set transform origin to center (matches shader's center scaling)
+  overlayVideo.style.transformOrigin = 'center center';
+  
+  // CSS: translate() scale() - translate first, then scale
+  // When translate happens before scale, it's in the original coordinate space
+  overlayVideo.style.transform = `translate(${offsetXPixels}px, ${offsetYPixels}px) scale(${cssScale})`;
+}
+
 // Mapping type dropdown change handler
 const mappingTypeSelect = document.getElementById('mappingTypeSelect');
 const useCorrectedMeshCheckbox = document.getElementById('useCorrectedMesh');
@@ -1317,6 +1393,9 @@ if (mappingTypeSelect) {
   mappingTypeSelect.addEventListener('change', (e) => {
     const selectedType = e.target.value;
     currentMappingType = selectedType;
+    
+    // Update composite overlay when mapping type changes
+    updateCompositeOverlay();
     
     // Get current state of "hide LED front" checkbox before switching
     const hideLedFrontCheckbox = document.getElementById('hideLedFront');
@@ -1607,6 +1686,9 @@ if (textureScaleSlider && textureScaleValue) {
     
     // Update texture scale in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture scale
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1627,6 +1709,9 @@ if (textureOffsetUSlider && textureOffsetUValue) {
     
     // Update texture offset U in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture offset
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1647,6 +1732,9 @@ if (textureOffsetVSlider && textureOffsetVValue) {
     
     // Update texture offset V in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture offset
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1666,6 +1754,9 @@ if (textureScaleResetBtn && textureScaleSlider && textureScaleValue) {
     
     // Update texture scale in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture scale
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1685,6 +1776,9 @@ if (textureOffsetUResetBtn && textureOffsetUSlider && textureOffsetUValue) {
     
     // Update texture offset U in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture offset
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1704,6 +1798,9 @@ if (textureOffsetVResetBtn && textureOffsetVSlider && textureOffsetVValue) {
     
     // Update texture offset V in all LED shaders
     updateLEDShaders(ledsGroup, material, currentMappingType);
+    
+    // Update overlay video transform to match texture offset
+    updateOverlayVideoTransform();
   });
 }
 
@@ -1837,11 +1934,130 @@ async function discoverNDIStreams() {
 const mapping = document.getElementById('mapping');
 const overlayVideo = document.getElementById('overlayVideo');
 const overlayImage = document.getElementById('overlayImage');
+const overlayComposite = document.getElementById('overlayComposite');
 const frameInfo = document.getElementById('frameInfo');
 const stillInfo = document.getElementById('stillInfo');
 const stillFileNameDisplay = document.getElementById('stillFileNameDisplay');
 const showFileInfoCheckbox = document.getElementById('showFileInfo');
 const timelineContainer = document.getElementById('timelineContainer');
+
+// ============================================
+// Floatable / draggable windows (mapping preview + debug)
+// ============================================
+function makeElementFloatableByCssVars(el, opts) {
+  if (!el) return;
+
+  const {
+    dxVarName,
+    dyVarName,
+    storageKey,
+  } = opts;
+
+  const getVarPx = (name) => {
+    const raw = getComputedStyle(el).getPropertyValue(name).trim();
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const setVarPx = (name, value) => {
+    el.style.setProperty(name, `${value}px`);
+  };
+
+  // Restore from localStorage
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.dx === 'number') setVarPx(dxVarName, parsed.dx);
+        if (typeof parsed.dy === 'number') setVarPx(dyVarName, parsed.dy);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startDx = 0;
+  let startDy = 0;
+
+  const onPointerDown = (e) => {
+    // Only primary button for mouse; allow touch/pen
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    dragging = true;
+    el.classList.add('dragging');
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // ignore
+    }
+
+    startX = e.clientX;
+    startY = e.clientY;
+    startDx = getVarPx(dxVarName);
+    startDy = getVarPx(dyVarName);
+
+    e.preventDefault();
+  };
+
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    const dx = startDx + (e.clientX - startX);
+    const dy = startDy + (e.clientY - startY);
+    setVarPx(dxVarName, dx);
+    setVarPx(dyVarName, dy);
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+
+    // Persist
+    try {
+      const dx = getVarPx(dxVarName);
+      const dy = getVarPx(dyVarName);
+      localStorage.setItem(storageKey, JSON.stringify({ dx, dy }));
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const onDoubleClick = () => {
+    // Reset position
+    setVarPx(dxVarName, 0);
+    setVarPx(dyVarName, 0);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // Use capture so dragging works even if the pointerdown happens on nested video/img
+  el.addEventListener('pointerdown', onPointerDown, { capture: true });
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  el.addEventListener('dblclick', onDoubleClick);
+}
+
+// Make mapping preview floatable (source video window)
+makeElementFloatableByCssVars(mapping, {
+  dxVarName: '--mapping-dx',
+  dyVarName: '--mapping-dy',
+  storageKey: 'float.mappingOverlay.v1',
+});
+
+// Make debug preview floatable too (handy for NDI/debug)
+const debugContainer = document.getElementById('debugContainer');
+makeElementFloatableByCssVars(debugContainer, {
+  dxVarName: '--debug-dx',
+  dyVarName: '--debug-dy',
+  storageKey: 'float.debugContainer.v1',
+});
 const timelineSlider = document.getElementById('timelineSlider');
 const textureInput = document.getElementById('textureInput');
 const textureStatus = document.getElementById('textureStatus');
@@ -2195,6 +2411,9 @@ function initializeMediaManager() {
     updateLEDShaders: updateLEDShaders,
     overlayVideo: overlayVideo,
     overlayImage: overlayImage,
+    overlayComposite: overlayComposite,
+    updateCompositeOverlay: updateCompositeOverlay,
+    updateOverlayVideoTransform: updateOverlayVideoTransform,
     mapping: mapping,
     frameInfo: frameInfo,
     stillInfo: stillInfo,

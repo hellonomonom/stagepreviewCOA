@@ -23,6 +23,16 @@ export class OverlayManager {
     this.minHeight = 100; // Minimum height in pixels
     
     this.init();
+
+    // Ensure CSS scale variable is initialized from the slider's initial value
+    try {
+      if (this.mapping) {
+        const initialScale = this.overlaySizeSlider ? (parseFloat(this.overlaySizeSlider.value) || 1.0) : 1.0;
+        this.mapping.style.setProperty('--mapping-scale', String(initialScale));
+      }
+    } catch (e) {
+      // ignore
+    }
   }
   
   /**
@@ -35,7 +45,8 @@ export class OverlayManager {
         const value = parseFloat(e.target.value);
         const scale = value;
         if (this.mapping) {
-          this.mapping.style.transform = `translateX(-50%) scale(${scale})`;
+          // Use CSS variables so we can compose transforms (drag offsets + scale) cleanly
+          this.mapping.style.setProperty('--mapping-scale', String(scale));
         }
         this.overlaySizeValue.textContent = value.toFixed(1);
       });
@@ -105,7 +116,8 @@ export class OverlayManager {
     
     // Reset scale to current slider value when adjusting aspect ratio
     const currentScale = this.overlaySizeSlider ? (parseFloat(this.overlaySizeSlider.value) || 1.0) : 1.0;
-    this.mapping.style.transform = `translateX(-50%) scale(${currentScale})`;
+    // Use CSS variables so we can compose transforms (drag offsets + scale) cleanly
+    this.mapping.style.setProperty('--mapping-scale', String(currentScale));
   }
   
   /**

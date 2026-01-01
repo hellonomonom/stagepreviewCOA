@@ -36,16 +36,16 @@ export const ledFragmentShader = `
     } else {
       // Front side shows texture or white
       if (uHasTexture > 0.5) {
-        // Scale UV coordinates from center (0.5, 0.5) first - inverted: >1 zooms out, <1 zooms in
-        vec2 scaledUv = (vUv - 0.5) / uTextureScale + 0.5;
-        // Apply offset (U offset is inverted)
-        vec2 offsetUv = scaledUv + vec2(-uTextureOffsetU, uTextureOffsetV);
+        // Apply offset FIRST (U offset is inverted), THEN scale from center (0.5, 0.5)
+        // This makes offsets behave consistently even when uTextureScale != 1.0
+        vec2 offsetUv = vUv + vec2(-uTextureOffsetU, uTextureOffsetV);
+        vec2 scaledUv = (offsetUv - 0.5) / uTextureScale + 0.5;
         // Check if UVs are outside bounds - show black if outside
-        if (offsetUv.x < 0.0 || offsetUv.x > 1.0 || offsetUv.y < 0.0 || offsetUv.y > 1.0) {
+        if (scaledUv.x < 0.0 || scaledUv.x > 1.0 || scaledUv.y < 0.0 || scaledUv.y > 1.0) {
           gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         } else {
           // Then invert V coordinate
-          vec2 invertedUv = vec2(offsetUv.x, 1.0 - offsetUv.y);
+          vec2 invertedUv = vec2(scaledUv.x, 1.0 - scaledUv.y);
           vec4 texColor = texture2D(uTexture, invertedUv);
           
           // Apply mask if enabled (for mapping types B and D)
